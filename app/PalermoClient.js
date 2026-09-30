@@ -365,6 +365,10 @@ export default function PalermoClient() {
   const [bugCategory, setBugCategory] = useState('gameplay')
   const [bugDescription, setBugDescription] = useState('')
   const [bugStatus, setBugStatus] = useState('idle')
+  const [nightTimer, setNightTimer] = useState(15)
+  const [killerVote, setKillerVote] = useState('')
+  const [killerVotes, setKillerVotes] = useState({})
+  const [nightResolvedTarget, setNightResolvedTarget] = useState('')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -397,6 +401,24 @@ export default function PalermoClient() {
     script.dataset.peerjs = 'true'
     document.head.appendChild(script)
   }, [])
+
+  useEffect(() => {
+    if (screen !== 'game' || phase !== 'night') return
+    setNightTimer(15)
+    setKillerVote('')
+    setNightResolvedTarget('')
+    if (isHost) setKillerVotes({})
+    const timer = setInterval(() => {
+      setNightTimer(v => {
+        if (v <= 1) {
+          clearInterval(timer)
+          return 0
+        }
+        return v - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [screen, phase, round])
 
   useEffect(() => {
     if (discussion <= 0 || phase !== 'day') return
@@ -564,6 +586,10 @@ export default function PalermoClient() {
         admitGuest(conn, data)
       }
 
+      if (data.type === 'killer-vote') {
+        setKillerVotes(current => ({ ...current, [conn.peer]: String(data.target || '') }))
+      }
+
       if (data.type === 'ready') {
         setPlayers(current => {
           const next = current.map(p => p.id === conn.peer ? { ...p, ready: !!data.ready } : p)
@@ -693,6 +719,9 @@ export default function PalermoClient() {
           setRound(1)
           setCountdown(null)
           setScreen('role')
+        }
+        if (data.type === 'night-result') {
+          setNightResolvedTarget(data.target || '')
         }
         if (data.type === 'phase-change') {
           setPhase(data.phase || 'night')
@@ -849,12 +878,38 @@ export default function PalermoClient() {
     setMuted(next)
   }
 
+  function submitKillerVote(target) {
+    if (!target || phase !== 'night') return
+    setKillerVote(target)
+    if (isHost) {
+      const myPeerId = peerRef.current?.id
+      if (myPeerId) setKillerVotes(current => ({ ...current, [myPeerId]: target }))
+    } else {
+      hostConnRef.current?.send({ type: 'killer-vote', target })
+    }
+  }
+
+  function resolveKillerVotes() {
+    if (!isHost || phase !== 'night') return
+    const values = Object.values(killerVotes).filter(Boolean)
+    let target = ''
+    if (values.length === 1) target = values[0]
+    if (values.length >= 2) {
+      target = values.every(v => v === values[0])
+        ? values[0]
+        : values[Math.floor(Math.random() * values.length)]
+    }
+    setNightResolvedTarget(target)
+    broadcast({ type: 'night-result', target })
+    setPhase('day')
+    setDiscussion(180)
+    broadcast({ type: 'phase-change', phase: 'day', round })
+  }
+
   function nextPhase() {
     if (!isHost) return
     if (phase === 'night') {
-      setPhase('day')
-      setDiscussion(180)
-      broadcast({ type: 'phase-change', phase: 'day', round })
+      resolveKillerVotes()
     } else {
       setPhase('vote')
       broadcast({ type: 'phase-change', phase: 'vote', round })
@@ -1125,8 +1180,38 @@ export default function PalermoClient() {
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
                 <h3>{t('citySleeping')}</h3>
-                <p>{t('nightExplain')}</p>
-                {isHost && <button className="primary wide" onClick={nextPhase}>{t('resolveNight')}</button>}
+                {(myRole?.id === 'visibleKiller' || myRole?.id === 'hiddenKiller') ? (
+                  <>
+                    <p>{lang === 'el'
+                      ? 'Έχεις 15 δευτερόλεπτα να επιλέξεις στόχο. Δεν βλέπεις την επιλογή του άλλου δολοφόνου.'
+                      : 'You have 15 seconds to choose a target. You cannot see the other killer’s choice.'}</p>
+                    <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
+                    <div className="targetGrid">
+                      {players.filter(p => p.name !== name).map(p => (
+                        <button
+                          key={p.id}
+                          className={killerVote === p.name ? 'selected' : ''}
+                          onClick={() => submitKillerVote(p.name)}
+                          disabled={nightTimer <= 0}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                    <small>{killerVote
+                      ? (lang === 'el' ? `Επέλεξες: ${killerVote}` : `Selected: ${killerVote}`)
+                      : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No target selected yet.')}</small>
+                  </>
+                ) : (
+                  <>
+                    <p>{lang === 'el'
+                      ? 'Η νύχτα είναι σε εξέλιξη. Περίμενε μέχρι να ολοκληρωθούν οι κρυφές ενέργειες.'
+                      : 'Night actions are in progress. Wait while the hidden roles act.'}</p>
+                    <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
+                    <div className="prototypeNotice">{lang === 'el' ? 'ΝΥΧΤΑ // ΚΛΕΙΔΩΜΕΝΟ' : 'NIGHT // LOCKED'}</div>
+                  </>
+                )}
+                {isHost && <button className="primary wide" disabled={nightTimer > 0} onClick={resolveKillerVotes}>{t('resolveNight')}</button>}
               </>}
 
               {phase === 'day' && <>
