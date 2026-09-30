@@ -369,6 +369,9 @@ export default function PalermoClient() {
   const [killerVote, setKillerVote] = useState('')
   const [killerVotes, setKillerVotes] = useState({})
   const [nightResolvedTarget, setNightResolvedTarget] = useState('')
+  const [doctorVote, setDoctorVote] = useState('')
+  const [doctorProtected, setDoctorProtected] = useState('')
+  const [nightSaved, setNightSaved] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -406,8 +409,13 @@ export default function PalermoClient() {
     if (screen !== 'game' || phase !== 'night') return
     setNightTimer(15)
     setKillerVote('')
+    setDoctorVote('')
     setNightResolvedTarget('')
-    if (isHost) setKillerVotes({})
+    setNightSaved(false)
+    if (isHost) {
+      setKillerVotes({})
+      setDoctorProtected('')
+    }
     const timer = setInterval(() => {
       setNightTimer(v => {
         if (v <= 1) {
@@ -590,6 +598,10 @@ export default function PalermoClient() {
         setKillerVotes(current => ({ ...current, [conn.peer]: String(data.target || '') }))
       }
 
+      if (data.type === 'doctor-vote') {
+        setDoctorProtected(String(data.target || ''))
+      }
+
       if (data.type === 'ready') {
         setPlayers(current => {
           const next = current.map(p => p.id === conn.peer ? { ...p, ready: !!data.ready } : p)
@@ -722,6 +734,7 @@ export default function PalermoClient() {
         }
         if (data.type === 'night-result') {
           setNightResolvedTarget(data.target || '')
+          setNightSaved(!!data.saved)
         }
         if (data.type === 'phase-change') {
           setPhase(data.phase || 'night')
@@ -889,6 +902,16 @@ export default function PalermoClient() {
     }
   }
 
+  function submitDoctorVote(target) {
+    if (!target || phase !== 'night') return
+    setDoctorVote(target)
+    if (isHost) {
+      setDoctorProtected(target)
+    } else {
+      hostConnRef.current?.send({ type: 'doctor-vote', target })
+    }
+  }
+
   function resolveKillerVotes() {
     if (!isHost || phase !== 'night') return
     const values = Object.values(killerVotes).filter(Boolean)
@@ -899,8 +922,13 @@ export default function PalermoClient() {
         ? values[0]
         : values[Math.floor(Math.random() * values.length)]
     }
-    setNightResolvedTarget(target)
-    broadcast({ type: 'night-result', target })
+
+    const saved = !!target && !!doctorProtected && target === doctorProtected
+    const resolvedTarget = saved ? '' : target
+
+    setNightSaved(saved)
+    setNightResolvedTarget(resolvedTarget)
+    broadcast({ type: 'night-result', target: resolvedTarget, saved })
     setPhase('day')
     setDiscussion(180)
     broadcast({ type: 'phase-change', phase: 'day', round })
@@ -1198,6 +1226,28 @@ export default function PalermoClient() {
                     <small>{killerVote
                       ? (lang === 'el' ? `Επέλεξες: ${killerVote}` : `Selected: ${killerVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No target selected yet.')}</small>
+                  </>
+                ) : myRole?.id === 'doctor' ? (
+                  <>
+                    <p>{lang === 'el'
+                      ? 'Έχεις 15 δευτερόλεπτα να προστατέψεις έναν παίκτη. Μπορείς να επιλέξεις και τον εαυτό σου.'
+                      : 'You have 15 seconds to protect one player. You may choose yourself.'}</p>
+                    <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
+                    <div className="targetGrid">
+                      {players.map(p => (
+                        <button
+                          key={p.id}
+                          className={doctorVote === p.name ? 'selected' : ''}
+                          onClick={() => submitDoctorVote(p.name)}
+                          disabled={nightTimer <= 0}
+                        >
+                          {p.name}{p.name === name ? (lang === 'el' ? ' (Εσύ)' : ' (You)') : ''}
+                        </button>
+                      ))}
+                    </div>
+                    <small>{doctorVote
+                      ? (lang === 'el' ? `Προστατεύεις: ${doctorVote}` : `Protecting: ${doctorVote}`)
+                      : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No player selected yet.')}</small>
                   </>
                 ) : myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
                   <>
