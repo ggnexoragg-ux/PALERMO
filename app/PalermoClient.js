@@ -8,7 +8,6 @@ const DEFAULT_ROLES = [
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 2, min: 0 },
-  { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
   { id: 'madness', label: 'Madness', emoji: '🌀', count: 1, min: 0 },
 ]
 
@@ -1046,7 +1045,8 @@ export default function PalermoClient() {
   }
 
   function startGame() {
-    if (!isHost || players.length < 2 || !players.every(p => p.ready)) return
+    const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
+    if (!isHost || players.length < 2 || !players.every(p => p.ready) || configuredRoleSlots > players.length) return
 
     let value = 5
     setCountdown(value)
@@ -1550,7 +1550,9 @@ export default function PalermoClient() {
   }
 
   const timerText = `${String(Math.floor(discussion / 60)).padStart(2, '0')}:${String(discussion % 60).padStart(2, '0')}`
-  const allReady = players.length >= 2 && players.every(p => p.ready)
+  const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
+  const roleConfigValid = configuredRoleSlots <= players.length
+  const allReady = players.length >= 2 && players.every(p => p.ready) && roleConfigValid
 
   return (
     <main className="palermoShell">
@@ -1720,6 +1722,7 @@ export default function PalermoClient() {
                 ))}
               </div>
 
+              {!roleConfigValid && <div className="prototypeNotice">{lang === 'el' ? 'Έχεις επιλέξει περισσότερους ειδικούς ρόλους από τους διαθέσιμους παίκτες.' : 'You selected more special-role slots than available players.'}</div>}
               <div className="roleTotal">{t('spectators')} <b>{spectators.length}/{maxSpectators}</b></div>
               {spectators.map(s => <div className="playerRow" key={s.id}><span className="avatar">{s.name[0]}</span><strong>{s.name}</strong><small>{t('spectator')}</small></div>)}
             </div>
@@ -1803,7 +1806,7 @@ export default function PalermoClient() {
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
                 <h3>{t('citySleeping')}</h3>
-                {(myRole?.id === 'visibleKiller' || myRole?.id === 'hiddenKiller') ? (
+                {!isDead && (myRole?.id === 'visibleKiller' || myRole?.id === 'hiddenKiller') ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Έχεις 15 δευτερόλεπτα να επιλέξεις στόχο. Δεν βλέπεις την επιλογή του άλλου δολοφόνου.'
@@ -1825,7 +1828,7 @@ export default function PalermoClient() {
                       ? (lang === 'el' ? `Επέλεξες: ${killerVote}` : `Selected: ${killerVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No target selected yet.')}</small>
                   </>
-                ) : myRole?.id === 'doctor' ? (
+                ) : !isDead && myRole?.id === 'doctor' ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Έχεις 15 δευτερόλεπτα να προστατέψεις έναν παίκτη. Μπορείς να επιλέξεις και τον εαυτό σου.'
@@ -1847,7 +1850,7 @@ export default function PalermoClient() {
                       ? (lang === 'el' ? `Προστατεύεις: ${doctorVote}` : `Protecting: ${doctorVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No player selected yet.')}</small>
                   </>
-                ) : myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
+                ) : !isDead && myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Πρώτη νύχτα: αυτή η πληροφορία είναι ιδιωτική. Μην αποκαλύψεις τον ρόλο σου.'
