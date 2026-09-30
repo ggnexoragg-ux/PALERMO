@@ -604,6 +604,7 @@ export default function PalermoClient() {
   const matchIdRef = useRef('')
   const reconnectGenerationRef = useRef(0)
   const daySkipVotesRef = useRef({})
+  const matchFinishedRef = useRef(false)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -1483,6 +1484,12 @@ export default function PalermoClient() {
     const timer = setInterval(tick, 200)
     return () => clearInterval(timer)
   }, [screen, phase, phaseEndsAt, round, isHost])
+
+  useEffect(() => {
+    if (isHost && screen === 'game' && gameRoster.length > 0 && !matchFinishedRef.current) {
+      checkWin(gameRoster, '', voteScores)
+    }
+  }, [isHost, screen, gameRoster, voteScores])
 
   useEffect(() => {
     if (micState === 'granted') {
@@ -2430,6 +2437,7 @@ export default function PalermoClient() {
     myRoleRef.current = null
     privateRolesRef.current.clear()
     matchResultRecordedRef.current = false
+    matchFinishedRef.current = false
     setPhase('night')
     phaseRef.current = 'night'
     setRound(1)
@@ -3297,6 +3305,7 @@ export default function PalermoClient() {
     setGameWinner('')
     setGameMvp('')
     matchResultRecordedRef.current = false
+    matchFinishedRef.current = false
     setKamikazeUsed(false)
     kamikazeUsedRef.current = new Set()
     setDayMessages([])
@@ -3489,7 +3498,8 @@ export default function PalermoClient() {
   }
 
   function finishMatch(winner, roster = gameRoster, scores = voteScores) {
-    if (!isHostRef.current) return
+    if (!isHostRef.current || matchFinishedRef.current) return
+    matchFinishedRef.current = true
     const scoreEntries = Object.entries(scores)
     const maxScore = scoreEntries.length ? Math.max(...scoreEntries.map(([, score]) => score)) : 0
     const mvpId = scoreEntries.find(([, score]) => score === maxScore && score > 0)?.[0]
@@ -3808,6 +3818,7 @@ export default function PalermoClient() {
     setSpectatorRoleRoster([])
     setGameWinner('')
     setGameMvp('')
+    matchFinishedRef.current = false
     setConnectionState('idle')
     setConnectionError('')
     setSessionTransitioning(false)
@@ -4861,8 +4872,8 @@ export default function PalermoClient() {
 
             <div className="howToIntro">
               {lang === 'el'
-                ? 'Στόχος σου εξαρτάται από τον ρόλο σου. Οι πολίτες προσπαθούν να βρουν και να βγάλουν τους δολοφόνους. Οι δολοφόνοι προσπαθούν να μείνουν ζωντανοί μέχρι να μείνουν μόνο αυτοί και ένας ακόμη μη δολοφόνος.'
-                : 'Your objective depends on your role. Citizens try to identify and eliminate both killers. The killers try to survive until only the killers and one non-killer remain alive.'}
+                ? 'Στόχος σου εξαρτάται από τον ρόλο σου. Οι πολίτες προσπαθούν να βρουν και να βγάλουν τους δολοφόνους. Οι δολοφόνοι κερδίζουν αμέσως μόλις μείνουν μόνο οι δολοφόνοι και ένας ακόμη μη δολοφόνος — για παράδειγμα, δύο δολοφόνοι απέναντι σε έναν ζωντανό παίκτη της καλής ομάδας.'
+                : 'Your objective depends on your role. Citizens try to identify and eliminate both killers. The killers win immediately once only the killers and one non-killer remain alive — for example, two killers against one surviving good-team player.'}
             </div>
 
             <div className="howToSection">
