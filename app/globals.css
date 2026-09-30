@@ -77,3 +77,5 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
   .leaderboardRow>:nth-child(3){grid-area:wins}.leaderboardRow>:nth-child(4){grid-area:mvp}.leaderboardRow>:nth-child(5){grid-area:games}.leaderboardRow>:nth-child(6){grid-area:rate}
   .leaderboardButton{padding:8px 9px!important;font-size:9px!important}
 }
+
+.voteLockedNotice{margin:10px 0 12px;padding:11px 12px;border:1px solid #2d6f4b;border-radius:10px;background:#173126;color:#8ff1b9;font-size:11px;font-weight:900;letter-spacing:.08em}
