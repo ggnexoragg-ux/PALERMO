@@ -209,6 +209,14 @@ const TEXT = {
     citizensWin: 'CITIZENS WIN',
     killersWin: 'KILLERS WIN',
     mvp: 'MVP',
+    dayChat: 'DAY CHAT',
+    dayChatHint: 'Alive players can talk and type during the two-minute discussion.',
+    voteTime: 'TIME TO VOTE',
+    eliminated: 'was eliminated. Their role was',
+    noElimination: 'No player was eliminated.',
+    music: 'MENU MUSIC',
+    musicOn: 'ON',
+    musicOff: 'OFF',
     madeBy: 'Made by'
   },
   el: {
@@ -361,6 +369,14 @@ const TEXT = {
     citizensWin: 'ΟΙ ΠΟΛΙΤΕΣ ΝΙΚΟΥΝ',
     killersWin: 'ΟΙ ΔΟΛΟΦΟΝΟΙ ΝΙΚΟΥΝ',
     mvp: 'MVP',
+    dayChat: 'CHAT ΗΜΕΡΑΣ',
+    dayChatHint: 'Οι ζωντανοί παίκτες μπορούν να μιλούν και να γράφουν για δύο λεπτά.',
+    voteTime: 'ΩΡΑ ΓΙΑ ΨΗΦΟ',
+    eliminated: 'αποχώρησε από το παιχνίδι. Ο ρόλος ήταν',
+    noElimination: 'Κανένας παίκτης δεν αποχώρησε.',
+    music: 'ΜΟΥΣΙΚΗ MENU',
+    musicOn: 'ON',
+    musicOff: 'OFF',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -433,6 +449,10 @@ export default function PalermoClient() {
   const [spectatorText, setSpectatorText] = useState('')
   const [gameWinner, setGameWinner] = useState('')
   const [gameMvp, setGameMvp] = useState('')
+  const [voteTimer, setVoteTimer] = useState(30)
+  const [dayMessages, setDayMessages] = useState([])
+  const [dayText, setDayText] = useState('')
+  const [menuMusicOn, setMenuMusicOn] = useState(true)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -440,9 +460,65 @@ export default function PalermoClient() {
   const pendingJoinConnsRef = useRef(new Map())
   const streamRef = useRef(null)
   const sessionRejoinTokenRef = useRef('')
+  const menuAudioRef = useRef(null)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
-  const chooseLanguage = value => { setLang(value); setScreen('home') }
+  const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
+
+  function startMenuMusic() {
+    if (!menuMusicOn || typeof window === 'undefined' || menuAudioRef.current) return
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const master = ctx.createGain()
+      master.gain.value = 0.035
+      master.connect(ctx.destination)
+
+      const freqs = [55, 82.41, 110]
+      const oscs = freqs.map((freq, i) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = i === 0 ? 'sine' : 'triangle'
+        osc.frequency.value = freq
+        gain.gain.value = i === 0 ? 0.75 : 0.28
+        osc.connect(gain)
+        gain.connect(master)
+        osc.start()
+        return osc
+      })
+
+      const lfo = ctx.createOscillator()
+      const lfoGain = ctx.createGain()
+      lfo.frequency.value = 0.08
+      lfoGain.gain.value = 0.015
+      lfo.connect(lfoGain)
+      lfoGain.connect(master.gain)
+      lfo.start()
+
+      menuAudioRef.current = { ctx, oscs, lfo }
+    } catch {}
+  }
+
+  function stopMenuMusic() {
+    const audio = menuAudioRef.current
+    if (!audio) return
+    try {
+      audio.oscs?.forEach(o => o.stop())
+      audio.lfo?.stop()
+      audio.ctx?.close()
+    } catch {}
+    menuAudioRef.current = null
+  }
+
+  function toggleMenuMusic() {
+    setMenuMusicOn(current => {
+      const next = !current
+      if (next) setTimeout(startMenuMusic, 0)
+      else stopMenuMusic()
+      return next
+    })
+  }
 
   function speak(text) {
     if (!narratorOn || typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return
@@ -491,10 +567,47 @@ export default function PalermoClient() {
   }, [screen, phase, round])
 
   useEffect(() => {
-    if (discussion <= 0 || phase !== 'day') return
-    const t = setInterval(() => setDiscussion(v => Math.max(0, v - 1)), 1000)
-    return () => clearInterval(t)
-  }, [phase, discussion])
+    if (screen === 'home' && menuMusicOn) startMenuMusic()
+    if (screen !== 'home') stopMenuMusic()
+  }, [screen, menuMusicOn])
+
+  useEffect(() => {
+    if (screen !== 'game' || phase !== 'day') return
+    setDiscussion(120)
+    const timer = setInterval(() => {
+      setDiscussion(v => {
+        if (v <= 1) {
+          clearInterval(timer)
+          if (isHost) {
+            setPhase('vote')
+            setVoteTimer(30)
+            setPlayerVotes({})
+            setVote('')
+            broadcast({ type: 'phase-change', phase: 'vote', round })
+          }
+          return 0
+        }
+        return v - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [screen, phase, round, isHost])
+
+  useEffect(() => {
+    if (screen !== 'game' || phase !== 'vote') return
+    setVoteTimer(30)
+    const timer = setInterval(() => {
+      setVoteTimer(v => {
+        if (v <= 1) {
+          clearInterval(timer)
+          if (isHost) resolveDayVote(playerVotes)
+          return 0
+        }
+        return v - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [screen, phase, round, isHost])
 
   useEffect(() => {
     if (screen === 'role' && myRole) speak(`${t('narrRole')} ${roleName(myRole)}.`)
@@ -556,6 +669,7 @@ export default function PalermoClient() {
       window.speechSynthesis?.cancel?.()
       peerRef.current?.destroy?.()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+      stopMenuMusic()
     }
   }, [])
 
@@ -679,6 +793,10 @@ export default function PalermoClient() {
 
       if (data.type === 'spectator-chat') {
         sendSpectatorMessage(String(data.text || ''), conn.peer)
+      }
+
+      if (data.type === 'day-chat') {
+        sendDayMessage(String(data.text || ''), conn.peer)
       }
 
       if (data.type === 'ready') {
@@ -824,6 +942,16 @@ export default function PalermoClient() {
         if (data.type === 'spectator-chat') {
           setSpectatorMessages(current => [...current.slice(-49), data.message])
         }
+        if (data.type === 'day-chat') {
+          setDayMessages(current => [...current.slice(-79), data.message])
+        }
+        if (data.type === 'vote-result') {
+          if (data.name && data.roleLabel) {
+            speak(`${data.name} ${t('eliminated')} ${data.roleLabel}.`)
+          } else {
+            speak(t('noElimination'))
+          }
+        }
         if (data.type === 'game-over') {
           setGameWinner(data.winner || '')
           setGameMvp(data.mvp || '')
@@ -930,6 +1058,8 @@ export default function PalermoClient() {
         setIsDead(false)
         setGameWinner('')
         setGameMvp('')
+        setDayMessages([])
+        setVoteTimer(30)
         broadcast({ type: 'game-state', roster })
 
         assigned.forEach(({ player, role }) => {
@@ -1078,6 +1208,20 @@ export default function PalermoClient() {
     setSpectatorText('')
   }
 
+  function sendDayMessage(rawText, senderId = peerRef.current?.id) {
+    const text = String(rawText || '').trim().slice(0, 300)
+    if (!text || phase !== 'day') return
+    const sender = gameRoster.find(p => p.id === senderId)
+    if (!sender?.alive) return
+    const message = { id: crypto.randomUUID(), name: sender.name, text, at: Date.now() }
+    setDayMessages(current => [...current.slice(-79), message])
+    guestConnsRef.current.forEach((conn, peerId) => {
+      const alivePeer = gameRoster.some(p => p.id === peerId && p.alive)
+      if (conn?.open && alivePeer) conn.send({ type: 'day-chat', message })
+    })
+    setDayText('')
+  }
+
   function registerDayVote(voterId, target) {
     if (!isHost || phase !== 'vote' || !target) return
     const voter = gameRoster.find(p => p.id === voterId)
@@ -1113,6 +1257,9 @@ export default function PalermoClient() {
     if (eliminatedName) {
       const victim = gameRoster.find(p => p.name === eliminatedName && p.alive)
       if (victim) {
+        const roleLabel = roleName({ id: victim.roleId })
+        speak(`${victim.name} ${t('eliminated')} ${roleLabel}.`)
+        broadcast({ type: 'vote-result', name: victim.name, roleLabel })
         const nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
         setGameRoster(nextRoster)
         broadcast({ type: 'game-state', roster: nextRoster })
@@ -1120,6 +1267,9 @@ export default function PalermoClient() {
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'vote' })
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
+    } else {
+      speak(t('noElimination'))
+      broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
 
     const nextRound = round + 1
@@ -1397,6 +1547,7 @@ export default function PalermoClient() {
           <div className="featureStrip">
             <span>{t('noAccount')}</span><span>{t('realPlayers')}</span><span>{t('roomCodes')}</span><span>{t('readySystem')}</span><span>{t('roleReveal')}</span>
           </div>
+          <button className="menuMusicToggle" onClick={toggleMenuMusic}>♫ {t('music')}: {menuMusicOn ? t('musicOn') : t('musicOff')}</button>
         </section>
       )}
 
@@ -1665,12 +1816,25 @@ export default function PalermoClient() {
                 <div className="bigIcon">☀️</div>
                 <h3>{t('discussion')}</h3>
                 <div className="discussionTimer">{timerText}</div>
-                <p>{t('dayExplain')}</p>
-                {isHost && <button className="primary wide" onClick={nextPhase}>{t('startVote')}</button>}
+                <p>{t('dayChatHint')}</p>
+                {!isDead && (
+                  <div className="dayChatBox">
+                    <div className="dayMessages">
+                      {dayMessages.map(msg => <div key={msg.id}><strong>{msg.name}</strong><span>{msg.text}</span></div>)}
+                    </div>
+                    <form onSubmit={e => { e.preventDefault(); if (isHost) sendDayMessage(dayText); else { hostConnRef.current?.send({ type:'day-chat', text:dayText }); setDayText('') } }}>
+                      <input value={dayText} onChange={e => setDayText(e.target.value)} maxLength={300} placeholder={t('dayChat')} />
+                      <button type="submit" disabled={!dayText.trim()}>{t('send')}</button>
+                    </form>
+                  </div>
+                )}
+                {isHost && <button className="wide" onClick={nextPhase}>{t('startVote')}</button>}
               </>}
 
               {phase === 'vote' && <>
                 <div className="bigIcon">🗳️</div>
+                <h3>{t('voteTime')}</h3>
+                <div className="discussionTimer">00:{String(voteTimer).padStart(2,'0')}</div>
                 <h3>{t('castVote')}</h3>
                 <div className="voteList">
                   {gameRoster.filter(p => p.alive && p.name !== name).map(p => (
