@@ -161,6 +161,21 @@ const TEXT = {
     micDenied: 'Microphone permission was denied or unavailable.',
     narrator: 'NARRATOR', narratorOn: 'ON', narratorOff: 'OFF', narratorHint: 'Game events are spoken in your selected language.',
     narrRole: 'Your role is', knownKiller: 'THE REVEALED KILLER IS', narrNight: 'Night falls over Palermo.', narrDay: 'Morning comes to Palermo. Discussion begins.', narrVote: 'Voting has started. Choose carefully.',
+    reportBug: 'REPORT A BUG',
+    reportBugTitle: 'REPORT A BUG',
+    bugCategory: 'PROBLEM TYPE',
+    bugDescription: 'WHAT HAPPENED?',
+    bugGameplay: 'Gameplay',
+    bugMultiplayer: 'Multiplayer',
+    bugUi: 'Interface',
+    bugAudio: 'Audio / Narrator',
+    bugOther: 'Other',
+    bugPlaceholder: 'Tell us what happened and what you expected.',
+    bugSubmit: 'SEND REPORT',
+    bugCancel: 'CANCEL',
+    bugSending: 'SENDING...',
+    bugThanks: 'Thanks — your report was sent.',
+    bugFailed: 'Could not send the report. Please try again.',
     madeBy: 'Made by'
   },
   el: {
@@ -279,6 +294,21 @@ const TEXT = {
     micDenied: 'Η άδεια μικροφώνου απορρίφθηκε ή δεν είναι διαθέσιμη.',
     narrator: 'ΑΦΗΓΗΤΗΣ', narratorOn: 'ΕΝΕΡΓΟΣ', narratorOff: 'ΚΛΕΙΣΤΟΣ', narratorHint: 'Τα γεγονότα του παιχνιδιού ακούγονται στη γλώσσα που επέλεξες.',
     narrRole: 'Ο ρόλος σου είναι', knownKiller: 'Ο ΦΑΝΕΡΟΣ ΔΟΛΟΦΟΝΟΣ ΕΙΝΑΙ', narrNight: 'Μια νύχτα πέφτει στο Παλέρμο.', narrDay: 'Η μέρα ξημερώνει στο Παλέρμο. Ώρα για συζήτηση.', narrVote: 'Η ψηφοφορία ξεκίνησε. Διάλεξε προσεκτικά.',
+    reportBug: 'ΑΝΑΦΟΡΑ BUG',
+    reportBugTitle: 'ΑΝΑΦΟΡΑ BUG',
+    bugCategory: 'ΤΥΠΟΣ ΠΡΟΒΛΗΜΑΤΟΣ',
+    bugDescription: 'ΤΙ ΣΥΝΕΒΗ;',
+    bugGameplay: 'Gameplay',
+    bugMultiplayer: 'Multiplayer',
+    bugUi: 'Interface',
+    bugAudio: 'Ήχος / Αφηγητής',
+    bugOther: 'Άλλο',
+    bugPlaceholder: 'Πες μας τι συνέβη και τι περίμενες να γίνει.',
+    bugSubmit: 'ΑΠΟΣΤΟΛΗ',
+    bugCancel: 'ΑΚΥΡΩΣΗ',
+    bugSending: 'ΑΠΟΣΤΟΛΗ...',
+    bugThanks: 'Ευχαριστούμε — η αναφορά στάλθηκε.',
+    bugFailed: 'Δεν ήταν δυνατή η αποστολή. Δοκίμασε ξανά.',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -331,6 +361,10 @@ export default function PalermoClient() {
   const [roomsLoading, setRoomsLoading] = useState(false)
   const [pendingRequests, setPendingRequests] = useState([])
   const [joinPending, setJoinPending] = useState(false)
+  const [bugOpen, setBugOpen] = useState(false)
+  const [bugCategory, setBugCategory] = useState('gameplay')
+  const [bugDescription, setBugDescription] = useState('')
+  const [bugStatus, setBugStatus] = useState('idle')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -777,6 +811,36 @@ export default function PalermoClient() {
     }
   }
 
+  async function submitBugReport() {
+    const description = bugDescription.trim()
+    if (description.length < 3 || bugStatus === 'sending') return
+    setBugStatus('sending')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_bug_reports`, {
+        method: 'POST',
+        headers: { ...REGISTRY_HEADERS, Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          category: bugCategory,
+          description: description.slice(0, 1000),
+          screen,
+          room_code: roomCode || null,
+          player_name: name.trim().slice(0, 18) || null,
+          language: lang,
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
+        }),
+      })
+      if (!res.ok) throw new Error('bug_report_failed')
+      setBugStatus('sent')
+      setBugDescription('')
+      setTimeout(() => {
+        setBugOpen(false)
+        setBugStatus('idle')
+      }, 1400)
+    } catch {
+      setBugStatus('error')
+    }
+  }
+
   function toggleMute() {
     const stream = streamRef.current
     if (!stream) return
@@ -1106,7 +1170,70 @@ export default function PalermoClient() {
           </div>
         </section>
       )}
-          <div className="palermoCredit">{t('madeBy')} <b>NEXORA</b></div>
+
+      <button className="bugReportFab" onClick={() => { setBugOpen(true); setBugStatus('idle') }}>
+        🐞 {t('reportBug')}
+      </button>
+
+      {bugOpen && (
+        <div className="bugModalBackdrop" onClick={() => setBugOpen(false)}>
+          <div className="bugModal card" onClick={e => e.stopPropagation()}>
+            <div className="bugModalHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // FEEDBACK</div>
+                <h3>{t('reportBugTitle')}</h3>
+              </div>
+              <button className="bugClose" onClick={() => setBugOpen(false)}>×</button>
+            </div>
+
+            <label>{t('bugCategory')}</label>
+            <div className="bugCategoryGrid">
+              {[
+                ['gameplay', t('bugGameplay')],
+                ['multiplayer', t('bugMultiplayer')],
+                ['ui', t('bugUi')],
+                ['audio', t('bugAudio')],
+                ['other', t('bugOther')],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  className={bugCategory === value ? 'active' : ''}
+                  onClick={() => setBugCategory(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label>{t('bugDescription')}</label>
+            <textarea
+              className="bugTextarea"
+              value={bugDescription}
+              onChange={e => { setBugDescription(e.target.value); if (bugStatus === 'error') setBugStatus('idle') }}
+              maxLength={1000}
+              rows={6}
+              placeholder={t('bugPlaceholder')}
+            />
+            <div className="bugCount">{bugDescription.length}/1000</div>
+
+            {bugStatus === 'sent' && <div className="bugSuccess">{t('bugThanks')}</div>}
+            {bugStatus === 'error' && <div className="errorText">{t('bugFailed')}</div>}
+
+            <div className="bugActions">
+              <button onClick={() => setBugOpen(false)}>{t('bugCancel')}</button>
+              <button
+                className="primary"
+                disabled={bugDescription.trim().length < 3 || bugStatus === 'sending' || bugStatus === 'sent'}
+                onClick={submitBugReport}
+              >
+                {bugStatus === 'sending' ? t('bugSending') : t('bugSubmit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="palermoCredit">{t('madeBy')} <b>NEXORA</b></div>
     </main>
   )
 }
