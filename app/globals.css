@@ -79,3 +79,10 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
 }
 
 .voteLockedNotice{margin:10px 0 12px;padding:11px 12px;border:1px solid #2d6f4b;border-radius:10px;background:#173126;color:#8ff1b9;font-size:11px;font-weight:900;letter-spacing:.08em}
+
+.autoRolesNotice{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:4px 0 10px;padding:10px 12px;border:1px solid #3b3150;border-radius:10px;background:#100c17}
+.autoRolesNotice span{font-size:10px;font-weight:900;letter-spacing:.1em;color:#c8b5ef}
+.autoRolesNotice small{font-size:10px;color:#8f84a0;text-align:right}
+.autoRoleCount{min-width:42px;justify-content:flex-end!important}
+.autoRoleCount b{display:grid;place-items:center;min-width:32px;height:28px;border:1px solid #3b3150;border-radius:8px;background:#171221;color:#d9c8f2}
+@media(max-width:560px){.autoRolesNotice{align-items:flex-start;flex-direction:column}.autoRolesNotice small{text-align:left}}
