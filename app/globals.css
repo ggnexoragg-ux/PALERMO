@@ -130,6 +130,12 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
 .playerStatusDot{width:8px;height:8px;border-radius:50%}
 .playerStatusDot.alive{background:#68df99;box-shadow:0 0 10px rgba(104,223,153,.55)}
 .playerStatusDot.dead{background:#a94b60;box-shadow:0 0 8px rgba(169,75,96,.35)}
+.playerStatusDot.reconnecting{background:#d6a14a;box-shadow:0 0 10px rgba(214,161,74,.5);animation:reconnectPulse 1s ease-in-out infinite}
+.playerBoardRow:has(.playerStatusDot.reconnecting){border-color:#5d4827;background:#151109}
+.playerBoardRow:has(.playerStatusDot.reconnecting) .playerBoardMeta small{color:#e1b45f}
+@keyframes reconnectPulse{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+@media(prefers-reduced-motion:reduce){.playerStatusDot.reconnecting{animation:none!important}}
+
 @media(max-width:1100px){.gameGrid{grid-template-columns:220px minmax(0,1fr)}.sideStack{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr))}.playerBoard{position:static;max-height:none}}
 @media(max-width:850px){.gameGrid{grid-template-columns:1fr}.playerBoard{order:-1}.sideStack{grid-template-columns:1fr}.playerBoardList{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.playerBoardList{grid-template-columns:1fr}}
