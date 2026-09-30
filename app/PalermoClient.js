@@ -7,8 +7,8 @@ const DEFAULT_ROLES = [
   { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
-  { id: 'lover', label: 'Lover', emoji: '❤️', count: 1, min: 0 },
-  { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 1, min: 0 },
+  { id: 'lover', label: 'Lover', emoji: '❤️', count: 2, min: 0 },
+  { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
   { id: 'madness', label: 'Madness', emoji: '🌀', count: 1, min: 0 },
 ]
 
@@ -156,11 +156,11 @@ const TEXT = {
     kamikaze: 'Kamikaze',
     madness: 'Madness',
     citizen: 'Citizen',
-    roleVisibleKiller: 'You are the revealed killer. Work with the hidden killer and agree on one target each night.',
-    roleHiddenKiller: 'You are the hidden killer. Work with the revealed killer, but your identity stays concealed from the detective.',
+    roleVisibleKiller: 'You are the revealed killer. Each night, choose a target privately. You do not know the hidden killer\'s identity or choice.',
+    roleHiddenKiller: 'You are the hidden killer. Each night, choose a target privately. You do not know the revealed killer\'s identity or choice.',
     roleDetective: 'You know who the revealed killer is. Use that information carefully without exposing yourself.',
     roleDoctor: 'Protect one player each night.',
-    roleLover: 'Your fate is linked to another player.',
+    roleLover: 'You are linked to another Lover. If either of you dies, the other dies too.',
     roleKamikaze: 'Your elimination can trigger a dangerous consequence.',
     roleMadness: 'Your win condition does not follow the ordinary rules.',
     roleCitizen: 'Find the killers, survive, and vote carefully.',
@@ -209,6 +209,7 @@ const TEXT = {
     citizensWin: 'CITIZENS WIN',
     killersWin: 'KILLERS WIN',
     mvp: 'MVP',
+    allRoles: 'ALL ROLES',
     dayChat: 'DAY CHAT',
     dayChatHint: 'Alive players can talk and type during the two-minute discussion.',
     voteTime: 'TIME TO VOTE',
@@ -316,11 +317,11 @@ const TEXT = {
     kamikaze: 'Καμικάζε',
     madness: 'Τρέλα',
     citizen: 'Πολίτης',
-    roleVisibleKiller: 'Είσαι ο Φανερός Δολοφόνος. Συνεργάσου με τον Κρυφό Δολοφόνο και επιλέξτε έναν στόχο κάθε νύχτα.',
-    roleHiddenKiller: 'Είσαι ο Κρυφός Δολοφόνος. Συνεργάσου με τον Φανερό Δολοφόνο, αλλά η ταυτότητά σου παραμένει κρυφή από τον Ντετέκτιβ.',
+    roleVisibleKiller: 'Είσαι ο Φανερός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Δεν γνωρίζεις ποιος είναι ο Κρυφός Δολοφόνος ούτε την επιλογή του.',
+    roleHiddenKiller: 'Είσαι ο Κρυφός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Δεν γνωρίζεις ποιος είναι ο Φανερός Δολοφόνος ούτε την επιλογή του.',
     roleDetective: 'Γνωρίζεις ποιος είναι ο Φανερός Δολοφόνος. Χρησιμοποίησε αυτή την πληροφορία προσεκτικά χωρίς να αποκαλυφθείς.',
     roleDoctor: 'Προστάτεψε έναν παίκτη κάθε βράδυ.',
-    roleLover: 'Η μοίρα σου είναι δεμένη με έναν άλλο παίκτη.',
+    roleLover: 'Είσαι δεμένος με έναν άλλο Ερωτευμένο. Αν πεθάνει ένας από τους δύο, πεθαίνει και ο άλλος.',
     roleKamikaze: 'Η εξόντωσή σου μπορεί να προκαλέσει επικίνδυνη συνέπεια.',
     roleMadness: 'Η συνθήκη νίκης σου δεν ακολουθεί τους συνηθισμένους κανόνες.',
     roleCitizen: 'Βρες τους δολοφόνους, επιβίωσε και ψήφισε προσεκτικά.',
@@ -369,6 +370,7 @@ const TEXT = {
     citizensWin: 'ΟΙ ΠΟΛΙΤΕΣ ΝΙΚΟΥΝ',
     killersWin: 'ΟΙ ΔΟΛΟΦΟΝΟΙ ΝΙΚΟΥΝ',
     mvp: 'MVP',
+    allRoles: 'ΟΛΟΙ ΟΙ ΡΟΛΟΙ',
     dayChat: 'CHAT ΗΜΕΡΑΣ',
     dayChatHint: 'Οι ζωντανοί παίκτες μπορούν να μιλούν και να γράφουν για δύο λεπτά.',
     voteTime: 'ΩΡΑ ΓΙΑ ΨΗΦΟ',
@@ -461,6 +463,9 @@ export default function PalermoClient() {
   const streamRef = useRef(null)
   const sessionRejoinTokenRef = useRef('')
   const menuAudioRef = useRef(null)
+  const playerVotesRef = useRef({})
+  const killerVotesRef = useRef({})
+  const doctorProtectedRef = useRef('')
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
@@ -552,12 +557,15 @@ export default function PalermoClient() {
     setNightSaved(false)
     if (isHost) {
       setKillerVotes({})
+      killerVotesRef.current = {}
       setDoctorProtected('')
+      doctorProtectedRef.current = ''
     }
     const timer = setInterval(() => {
       setNightTimer(v => {
         if (v <= 1) {
           clearInterval(timer)
+          if (isHost) setTimeout(() => resolveKillerVotes(killerVotesRef.current, doctorProtectedRef.current), 0)
           return 0
         }
         return v - 1
@@ -582,6 +590,7 @@ export default function PalermoClient() {
             setPhase('vote')
             setVoteTimer(30)
             setPlayerVotes({})
+            playerVotesRef.current = {}
             setVote('')
             broadcast({ type: 'phase-change', phase: 'vote', round })
           }
@@ -600,7 +609,7 @@ export default function PalermoClient() {
       setVoteTimer(v => {
         if (v <= 1) {
           clearInterval(timer)
-          if (isHost) resolveDayVote(playerVotes)
+          if (isHost) resolveDayVote(playerVotesRef.current)
           return 0
         }
         return v - 1
@@ -780,11 +789,21 @@ export default function PalermoClient() {
       }
 
       if (data.type === 'killer-vote') {
-        setKillerVotes(current => ({ ...current, [conn.peer]: String(data.target || '') }))
+        const actor = gameRoster.find(p => p.id === conn.peer)
+        if (actor?.alive && (actor.roleId === 'visibleKiller' || actor.roleId === 'hiddenKiller')) {
+          const target = String(data.target || '')
+          killerVotesRef.current = { ...killerVotesRef.current, [conn.peer]: target }
+          setKillerVotes(killerVotesRef.current)
+        }
       }
 
       if (data.type === 'doctor-vote') {
-        setDoctorProtected(String(data.target || ''))
+        const actor = gameRoster.find(p => p.id === conn.peer)
+        if (actor?.alive && actor.roleId === 'doctor') {
+          const target = String(data.target || '')
+          doctorProtectedRef.current = target
+          setDoctorProtected(target)
+        }
       }
 
       if (data.type === 'player-vote') {
@@ -1001,10 +1020,14 @@ export default function PalermoClient() {
   function changeRole(id, delta) {
     if (!isHost) return
     setRoles(current => {
-      const next = current.map(role => role.id === id
-        ? { ...role, count: Math.max(role.min, Math.min(4, role.count + delta)) }
-        : role
-      )
+      const next = current.map(role => {
+        if (role.id !== id) return role
+        if (id === 'lover') {
+          const count = delta > 0 ? 2 : 0
+          return { ...role, count }
+        }
+        return { ...role, count: Math.max(role.min, Math.min(4, role.count + delta)) }
+      })
       setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers, maxSpectators, roles: next }), 0)
       return next
     })
@@ -1046,6 +1069,7 @@ export default function PalermoClient() {
           role: pool[index] || citizen,
         }))
         const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
+        const loverPlayers = assigned.filter(entry => entry.role.id === 'lover').map(entry => entry.player)
         const roster = assigned.map(({ player, role }) => ({
           id: player.id,
           name: player.name,
@@ -1063,9 +1087,13 @@ export default function PalermoClient() {
         broadcast({ type: 'game-state', roster })
 
         assigned.forEach(({ player, role }) => {
-          const privateRole = role.id === 'detective' && visibleKillerPlayer
+          let privateRole = role.id === 'detective' && visibleKillerPlayer
             ? { ...role, knownVisibleKiller: visibleKillerPlayer.name }
             : role
+          if (role.id === 'lover' && loverPlayers.length >= 2) {
+            const partner = loverPlayers.find(p => p.id !== player.id)
+            if (partner) privateRole = { ...privateRole, loverPartner: partner.name }
+          }
 
           if (player.isHost) {
             setMyRole(privateRole)
@@ -1134,20 +1162,24 @@ export default function PalermoClient() {
   }
 
   function submitKillerVote(target) {
-    if (!target || phase !== 'night') return
+    if (!target || phase !== 'night' || isDead) return
     setKillerVote(target)
     if (isHost) {
       const myPeerId = peerRef.current?.id
-      if (myPeerId) setKillerVotes(current => ({ ...current, [myPeerId]: target }))
+      if (myPeerId) {
+        killerVotesRef.current = { ...killerVotesRef.current, [myPeerId]: target }
+        setKillerVotes(killerVotesRef.current)
+      }
     } else {
       hostConnRef.current?.send({ type: 'killer-vote', target })
     }
   }
 
   function submitDoctorVote(target) {
-    if (!target || phase !== 'night') return
+    if (!target || phase !== 'night' || isDead) return
     setDoctorVote(target)
     if (isHost) {
+      doctorProtectedRef.current = target
       setDoctorProtected(target)
     } else {
       hostConnRef.current?.send({ type: 'doctor-vote', target })
@@ -1168,6 +1200,17 @@ export default function PalermoClient() {
     setGameMvp(mvp)
     setScreen('gameOver')
     broadcast({ type: 'game-over', winner, mvp })
+  }
+
+  function applyLoverChain(roster, victim) {
+    if (!victim || victim.roleId !== 'lover') return { roster, chained: [] }
+    const otherLovers = roster.filter(p => p.roleId === 'lover' && p.alive && p.id !== victim.id)
+    if (!otherLovers.length) return { roster, chained: [] }
+    const chainedIds = new Set(otherLovers.map(p => p.id))
+    return {
+      roster: roster.map(p => chainedIds.has(p.id) ? { ...p, alive: false } : p),
+      chained: otherLovers,
+    }
   }
 
   function checkWin(roster, eliminatedRoleId = '', scores = voteScores) {
@@ -1228,6 +1271,7 @@ export default function PalermoClient() {
     if (!voter?.alive) return
     setPlayerVotes(current => {
       const next = { ...current, [voterId]: target }
+      playerVotesRef.current = next
       const living = aliveRoster()
       if (Object.keys(next).length >= living.length) setTimeout(() => resolveDayVote(next), 0)
       return next
@@ -1260,11 +1304,17 @@ export default function PalermoClient() {
         const roleLabel = roleName({ id: victim.roleId })
         speak(`${victim.name} ${t('eliminated')} ${roleLabel}.`)
         broadcast({ type: 'vote-result', name: victim.name, roleLabel })
-        const nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        let nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        const loverChain = applyLoverChain(nextRoster, victim)
+        nextRoster = loverChain.roster
         setGameRoster(nextRoster)
         broadcast({ type: 'game-state', roster: nextRoster })
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'vote' })
+        loverChain.chained.forEach(partner => {
+          if (partner.id === peerRef.current?.id) setIsDead(true)
+          else guestConnsRef.current.get(partner.id)?.send({ type: 'eliminated', reason: 'lover' })
+        })
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
     } else {
@@ -1274,15 +1324,16 @@ export default function PalermoClient() {
 
     const nextRound = round + 1
     setPlayerVotes({})
+    playerVotesRef.current = {}
     setVote('')
     setPhase('night')
     setRound(nextRound)
     broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
   }
 
-  function resolveKillerVotes() {
+  function resolveKillerVotes(currentKillerVotes = killerVotesRef.current, currentDoctorProtected = doctorProtectedRef.current) {
     if (!isHost || phase !== 'night') return
-    const values = Object.values(killerVotes).filter(Boolean)
+    const values = Object.values(currentKillerVotes).filter(Boolean)
     let target = ''
     if (values.length === 1) target = values[0]
     if (values.length >= 2) {
@@ -1291,7 +1342,7 @@ export default function PalermoClient() {
         : values[Math.floor(Math.random() * values.length)]
     }
 
-    const saved = !!target && !!doctorProtected && target === doctorProtected
+    const saved = !!target && !!currentDoctorProtected && target === currentDoctorProtected
     const resolvedTarget = saved ? '' : target
 
     setNightSaved(saved)
@@ -1301,11 +1352,17 @@ export default function PalermoClient() {
     if (resolvedTarget) {
       const victim = gameRoster.find(p => p.name === resolvedTarget && p.alive)
       if (victim) {
-        const nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        let nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        const loverChain = applyLoverChain(nextRoster, victim)
+        nextRoster = loverChain.roster
         setGameRoster(nextRoster)
         broadcast({ type: 'game-state', roster: nextRoster })
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'night' })
+        loverChain.chained.forEach(partner => {
+          if (partner.id === peerRef.current?.id) setIsDead(true)
+          else guestConnsRef.current.get(partner.id)?.send({ type: 'eliminated', reason: 'lover' })
+        })
         if (checkWin(nextRoster, '')) return
       }
     }
@@ -1713,6 +1770,7 @@ export default function PalermoClient() {
             <div className="roleEmoji">{myRole.emoji}</div>
             <small>{t('yourRole')}</small>
             <h2>{roleName(myRole).toUpperCase()}</h2>
+            {myRole.id === 'lover' && myRole.loverPartner && <div className="prototypeNotice">❤️ {myRole.loverPartner}</div>}
             <p>{myRole.id === 'visibleKiller'
               ? t('roleVisibleKiller')
               : myRole.id === 'hiddenKiller'
@@ -1809,7 +1867,7 @@ export default function PalermoClient() {
                     <div className="prototypeNotice">{lang === 'el' ? 'ΝΥΧΤΑ // ΚΛΕΙΔΩΜΕΝΟ' : 'NIGHT // LOCKED'}</div>
                   </>
                 )}
-                {isHost && <button className="primary wide" disabled={nightTimer > 0} onClick={resolveKillerVotes}>{t('resolveNight')}</button>}
+
               </>}
 
               {phase === 'day' && <>
@@ -1889,6 +1947,15 @@ export default function PalermoClient() {
             <div className="roleEmoji">🏁</div>
             <h2>{gameWinner === 'madness' ? t('madnessWins') : gameWinner === 'killers' ? t('killersWin') : gameWinner === 'citizens' ? t('citizensWin') : t('gameOver')}</h2>
             {gameMvp && <div className="mvpBanner"><small>{t('mvp')}</small><strong>★ {gameMvp}</strong></div>}
+            <div className="roleRevealList">
+              <div className="cardTitle"><span>{t('allRoles')}</span><b>{gameRoster.length}</b></div>
+              {gameRoster.map(p => (
+                <div className="roleRevealLine" key={p.id}>
+                  <span>{p.alive ? '●' : '☠'} {p.name}</span>
+                  <strong>{roleName({ id: p.roleId })}</strong>
+                </div>
+              ))}
+            </div>
             <p>{t('whatNext')}</p>
 
             {isHost ? (
