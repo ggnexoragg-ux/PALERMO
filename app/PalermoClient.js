@@ -530,6 +530,9 @@ export default function PalermoClient() {
   const [leaderboardRows, setLeaderboardRows] = useState([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState('')
+  const [matchHistory, setMatchHistory] = useState([])
+  const [matchHistoryLoading, setMatchHistoryLoading] = useState(false)
+  const [matchHistoryError, setMatchHistoryError] = useState('')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -577,6 +580,7 @@ export default function PalermoClient() {
   const hostMigrationRef = useRef(false)
   const hostMigrationTimerRef = useRef(null)
   const setupHostConnectionRef = useRef(null)
+  const matchIdRef = useRef('')
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -750,6 +754,7 @@ export default function PalermoClient() {
     } catch {}
     saveAuthSession(null)
     setProfile(null)
+    setMatchHistory([])
     setName('')
     setProfileNameDraft('')
     setAuthOpen(false)
@@ -827,6 +832,30 @@ export default function PalermoClient() {
     }
   }
 
+  async function fetchMatchHistory() {
+    const session = authSessionRef.current
+    if (!session?.user?.id || !session?.access_token) {
+      setMatchHistory([])
+      return
+    }
+    setMatchHistoryLoading(true)
+    setMatchHistoryError('')
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/palermo_match_history?user_id=eq.${encodeURIComponent(session.user.id)}&select=id,match_id,role_id,winner,won,mvp,rounds,player_count,created_at&order=created_at.desc&limit=12`,
+        { headers: authHeaders(session.access_token), cache: 'no-store' }
+      )
+      if (!res.ok) throw new Error('match_history_failed')
+      const rows = await res.json()
+      setMatchHistory(Array.isArray(rows) ? rows : [])
+    } catch {
+      setMatchHistory([])
+      setMatchHistoryError(lang === 'el' ? 'Δεν ήταν δυνατή η φόρτωση του ιστορικού αγώνων.' : 'Could not load match history.')
+    } finally {
+      setMatchHistoryLoading(false)
+    }
+  }
+
   async function fetchLeaderboard() {
     setLeaderboardLoading(true)
     setLeaderboardError('')
@@ -862,21 +891,28 @@ export default function PalermoClient() {
   async function recordMatchResult(winner, mvpName) {
     const session = authSessionRef.current
     const roleId = myRoleRef.current?.id
-    if (!session?.access_token || !roleId || matchResultRecordedRef.current) return
+    const matchId = matchIdRef.current
+    if (!session?.access_token || !roleId || !matchId || matchResultRecordedRef.current) return
     matchResultRecordedRef.current = true
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_record_match_result`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_record_match_result_v2`, {
         method: 'POST',
         headers: authHeaders(session.access_token),
         body: JSON.stringify({
+          p_match_id: matchId,
           p_won: didRoleWin(winner, roleId),
           p_mvp: !!mvpName && String(mvpName) === String(name),
+          p_role_id: roleId,
+          p_winner: winner || 'unknown',
+          p_rounds: Math.max(1, Number(roundRef.current || 1)),
+          p_player_count: gameRosterRef.current.length,
         }),
       })
       if (!res.ok) throw new Error('stats_update_failed')
       const data = await res.json()
       const updated = Array.isArray(data) ? data[0] : data
       if (updated?.id) setProfile(updated)
+      fetchMatchHistory()
     } catch {
       matchResultRecordedRef.current = false
     }
@@ -1567,6 +1603,7 @@ export default function PalermoClient() {
       nightSaved,
       gameWinner,
       gameMvp,
+      matchId: matchIdRef.current,
     }
   }
 
@@ -1626,6 +1663,7 @@ export default function PalermoClient() {
     setNightSaved(!!snapshot.nightSaved)
     setGameWinner(snapshot.gameWinner || '')
     setGameMvp(snapshot.gameMvp || '')
+    matchIdRef.current = String(snapshot.matchId || matchIdRef.current || '')
     setRoomName(snapshot.roomName ?? roomName)
     setAccessMode(snapshot.accessMode ?? accessMode)
     setAccessCode(snapshot.accessCode ?? accessCode)
@@ -1872,6 +1910,7 @@ export default function PalermoClient() {
       spectatorMessages: spectatorMessagesRef.current,
       voteLocked: !!playerVotesRef.current[conn.peer],
       voteTarget: playerVotesRef.current[conn.peer] || '',
+      matchId: matchIdRef.current,
     })
     broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
     setTimeout(() => broadcastState(playersRef.current, spectatorsRef.current), 0)
@@ -1949,6 +1988,7 @@ export default function PalermoClient() {
     setSpectatorMessages([])
     setGameWinner('')
     setGameMvp('')
+    matchIdRef.current = ''
     clearScheduledGameTimers()
     if (scheduledPhaseRef.current) clearTimeout(scheduledPhaseRef.current)
     scheduledPhaseRef.current = null
@@ -2232,6 +2272,7 @@ export default function PalermoClient() {
           setSpectatorMessages(Array.isArray(data.spectatorMessages) ? data.spectatorMessages : [])
           setVoteLocked(!!data.voteLocked)
           setVote(String(data.voteTarget || ''))
+          if (data.matchId) matchIdRef.current = String(data.matchId)
           setGameStartsAt(Number(data.gameStartsAt || 0))
           if (data.screen === 'lobby') {
             setReady(!!(data.players || []).find(p => p.clientKey === clientKeyRef.current)?.ready)
@@ -2267,6 +2308,7 @@ export default function PalermoClient() {
         }
         if (data.type === 'countdown') setCountdown(data.value)
         if (data.type === 'game-start') {
+          matchIdRef.current = String(data.matchId || '')
           const startsAt = Number(data.gameStartsAt || (syncedHostNow() + 5000))
           setMyRole(data.role)
           setGameStartsAt(startsAt)
@@ -2539,6 +2581,8 @@ export default function PalermoClient() {
       alive: true,
     }))
 
+    const matchId = crypto.randomUUID()
+    matchIdRef.current = matchId
     const revealAt = Date.now()
     const startsAt = revealAt + 5000
 
@@ -2576,6 +2620,7 @@ export default function PalermoClient() {
 
       const payload = {
         type: 'game-start',
+        matchId,
         role: privateRole,
         revealAt,
         gameStartsAt: startsAt,
@@ -3183,7 +3228,7 @@ export default function PalermoClient() {
           {screen !== 'language' && <button className="howToButton" onClick={() => setHowToOpen(true)}>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</button>}
           {screen !== 'language' && <button className="leaderboardButton" onClick={openLeaderboard}>{lang === 'el' ? 'ΚΑΤΑΤΑΞΗ' : 'LEADERBOARD'}</button>}
           {screen !== 'language' && (
-            <button className="accountButton" onClick={() => { setAuthMessage(''); setProfileNameDraft(profile?.username || ''); setAuthOpen(true) }}>
+            <button className="accountButton" onClick={() => { setAuthMessage(''); setProfileNameDraft(profile?.username || ''); setAuthOpen(true); if (profile) fetchMatchHistory() }}>
               {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile?.username?.[0]?.toUpperCase() || '👤'}</span>}
               <b>{profile?.username || (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN')}</b>
             </button>
@@ -3758,7 +3803,44 @@ export default function PalermoClient() {
                 <div className="profileStats">
                   <div><b>{profile.games_played || 0}</b><span>{lang === 'el' ? 'ΠΑΙΧΝΙΔΙΑ' : 'GAMES'}</span></div>
                   <div><b>{profile.wins || 0}</b><span>{lang === 'el' ? 'ΝΙΚΕΣ' : 'WINS'}</span></div>
+                  <div><b>{profile.losses || 0}</b><span>{lang === 'el' ? 'ΗΤΤΕΣ' : 'LOSSES'}</span></div>
                   <div><b>{profile.mvps || 0}</b><span>MVP</span></div>
+                  <div><b>{profile.games_played > 0 ? Math.round(((profile.wins || 0) / profile.games_played) * 100) : 0}%</b><span>{lang === 'el' ? 'ΠΟΣΟΣΤΟ ΝΙΚΗΣ' : 'WIN RATE'}</span></div>
+                </div>
+
+                <div className="matchHistoryBlock">
+                  <div className="matchHistoryHead">
+                    <div>
+                      <small>{lang === 'el' ? 'ΠΡΟΣΦΑΤΑ ΠΑΙΧΝΙΔΙΑ' : 'RECENT MATCHES'}</small>
+                      <strong>{lang === 'el' ? 'ΙΣΤΟΡΙΚΟ ΑΓΩΝΩΝ' : 'MATCH HISTORY'}</strong>
+                    </div>
+                    <button onClick={fetchMatchHistory} disabled={matchHistoryLoading}>
+                      {matchHistoryLoading ? '...' : (lang === 'el' ? 'ΑΝΑΝΕΩΣΗ' : 'REFRESH')}
+                    </button>
+                  </div>
+                  {matchHistoryLoading && matchHistory.length === 0 && <div className="matchHistoryEmpty">{lang === 'el' ? 'ΦΟΡΤΩΣΗ...' : 'LOADING...'}</div>}
+                  {!matchHistoryLoading && matchHistoryError && <div className="errorText">{matchHistoryError}</div>}
+                  {!matchHistoryLoading && !matchHistoryError && matchHistory.length === 0 && (
+                    <div className="matchHistoryEmpty">{lang === 'el' ? 'Δεν υπάρχουν καταγεγραμμένα παιχνίδια ακόμα.' : 'No recorded matches yet.'}</div>
+                  )}
+                  <div className="matchHistoryList">
+                    {matchHistory.map(match => (
+                      <div className={`matchHistoryRow ${match.won ? 'won' : 'lost'}`} key={match.id}>
+                        <div className="matchHistoryResult">
+                          <b>{match.won ? (lang === 'el' ? 'ΝΙΚΗ' : 'WIN') : (lang === 'el' ? 'ΗΤΤΑ' : 'LOSS')}</b>
+                          <small>{new Date(match.created_at).toLocaleDateString(lang === 'el' ? 'el-GR' : 'en-GB', { day:'2-digit', month:'short' })}</small>
+                        </div>
+                        <div className="matchHistoryRole">
+                          <strong>{roleName({ id: match.role_id })}</strong>
+                          <span>{lang === 'el' ? `${match.rounds} γύροι · ${match.player_count} παίκτες` : `${match.rounds} rounds · ${match.player_count} players`}</span>
+                        </div>
+                        <div className="matchHistoryBadges">
+                          {match.mvp && <span>MVP</span>}
+                          <small>{match.winner === 'killers' ? (lang === 'el' ? 'ΔΟΛΟΦΟΝΟΙ' : 'KILLERS') : match.winner === 'citizens' ? (lang === 'el' ? 'ΠΟΛΙΤΕΣ' : 'CITIZENS') : match.winner === 'madness' ? (lang === 'el' ? 'ΤΡΕΛΑ' : 'MADNESS') : '—'}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
                 <div className="authActions">
