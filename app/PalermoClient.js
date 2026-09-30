@@ -22,6 +22,20 @@ const REGISTRY_HEADERS = {
   'Content-Type': 'application/json',
 }
 
+const PEER_OPTIONS = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+    ],
+    sdpSemantics: 'unified-plan',
+  },
+}
+
 async function fetchPublicRooms() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_rooms?select=room_code,room_name,host_name,language,access_mode,player_count,max_players,spectator_count,max_spectators,narrator_enabled,started,heartbeat_at&order=created_at.desc`, {
     headers: REGISTRY_HEADERS,
@@ -466,6 +480,7 @@ export default function PalermoClient() {
   const [micState, setMicState] = useState('idle')
   const [micError, setMicError] = useState('')
   const [muted, setMuted] = useState(false)
+  const [voiceConnectedCount, setVoiceConnectedCount] = useState(0)
   const [narratorOn, setNarratorOn] = useState(true)
   const [roomName, setRoomName] = useState('')
   const [accessMode, setAccessMode] = useState('open')
@@ -524,6 +539,7 @@ export default function PalermoClient() {
   const streamRef = useRef(null)
   const voiceCallsRef = useRef(new Map())
   const remoteAudioRef = useRef(new Map())
+  const voiceReconnectTimersRef = useRef(new Map())
   const playersRef = useRef([])
   const mutedRef = useRef(false)
   const isDeadRef = useRef(false)
@@ -1072,6 +1088,7 @@ export default function PalermoClient() {
         audio.remove?.()
       } catch {}
       remoteAudioRef.current.delete(peerId)
+      refreshVoiceConnectedCount()
     }
   }
 
@@ -1107,29 +1124,48 @@ export default function PalermoClient() {
       }
       audio.srcObject = remoteStream
       audio.play().catch(() => {})
+      refreshVoiceConnectedCount()
       updateVoiceGate()
     })
 
     call.on('close', () => {
       if (voiceCallsRef.current.get(peerId) === call) voiceCallsRef.current.delete(peerId)
       stopRemoteAudio(peerId)
+      refreshVoiceConnectedCount()
+      scheduleVoiceReconnect(peerId)
     })
     call.on('error', () => {
       if (voiceCallsRef.current.get(peerId) === call) voiceCallsRef.current.delete(peerId)
       stopRemoteAudio(peerId)
+      refreshVoiceConnectedCount()
+      scheduleVoiceReconnect(peerId)
     })
   }
 
   function handleIncomingVoiceCall(call) {
-    const allowed = playersRef.current.some(p => p.id === call.peer)
+    const peerId = call?.peer
+    const allowed =
+      playersRef.current.some(p => p.id === peerId) ||
+      guestConnsRef.current.has(peerId) ||
+      hostConnRef.current?.peer === peerId
+
     if (!allowed) {
       try { call.close() } catch {}
       return
     }
-    if (voiceCallsRef.current.has(call.peer)) {
-      try { call.close() } catch {}
-      return
+
+    const existing = voiceCallsRef.current.get(peerId)
+    if (existing && existing !== call) {
+      // Deterministic duplicate handling: lower PeerJS id owns the outgoing call.
+      const localId = peerRef.current?.id || ''
+      const shouldAcceptIncoming = String(peerId).localeCompare(String(localId)) < 0
+      if (!shouldAcceptIncoming) {
+        try { call.close() } catch {}
+        return
+      }
+      closeVoiceCall(peerId)
     }
+
     try {
       call.answer(streamRef.current || undefined)
       attachVoiceCall(call)
@@ -1222,10 +1258,34 @@ export default function PalermoClient() {
       } catch {}
     })
     remoteAudioRef.current.clear()
+    voiceReconnectTimersRef.current.forEach(timer => clearTimeout(timer))
+    voiceReconnectTimersRef.current.clear()
+    setVoiceConnectedCount(0)
   }
 
   function getPeer() {
     return window.Peer
+  }
+
+  function makePeer(id) {
+    const Peer = getPeer()
+    if (!Peer) return null
+    return id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS)
+  }
+
+  function refreshVoiceConnectedCount() {
+    setVoiceConnectedCount([...remoteAudioRef.current.values()].filter(audio => !!audio?.srcObject).length)
+  }
+
+  function scheduleVoiceReconnect(peerId) {
+    if (!peerId || micState !== 'granted') return
+    clearTimeout(voiceReconnectTimersRef.current.get(peerId))
+    const timer = setTimeout(() => {
+      voiceReconnectTimersRef.current.delete(peerId)
+      reconnectVoicePeer(peerId)
+      ensureVoiceCalls()
+    }, 900)
+    voiceReconnectTimersRef.current.set(peerId, timer)
   }
 
   function roomPeerId(code) {
@@ -1499,7 +1559,7 @@ export default function PalermoClient() {
     setConnectionState('connecting')
     setConnectionError('')
 
-    const peer = new Peer(roomPeerId(code))
+    const peer = makePeer(roomPeerId(code))
     peerRef.current = peer
     peer.on('call', handleIncomingVoiceCall)
 
@@ -1545,7 +1605,7 @@ export default function PalermoClient() {
     setConnectionState('connecting')
     setConnectionError('')
 
-    const peer = new Peer()
+    const peer = makePeer()
     peerRef.current = peer
     peer.on('call', handleIncomingVoiceCall)
 
@@ -1810,7 +1870,14 @@ export default function PalermoClient() {
   async function requestMic() {
     setMicError('')
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      })
       closeAllVoice()
       streamRef.current?.getTracks?.().forEach(track => track.stop())
       streamRef.current = stream
@@ -2228,7 +2295,7 @@ export default function PalermoClient() {
 
     if (becomingHost) {
       setIsHost(true)
-      const peer = new Peer(roomPeerId(newCode))
+      const peer = makePeer(roomPeerId(newCode))
       peerRef.current = peer
       peer.on('call', handleIncomingVoiceCall)
       peer.on('open', id => {
@@ -2258,7 +2325,7 @@ export default function PalermoClient() {
       })
     } else {
       setIsHost(false)
-      const peer = new Peer()
+      const peer = makePeer()
       peerRef.current = peer
       peer.on('call', handleIncomingVoiceCall)
       peer.on('open', () => {
@@ -2547,7 +2614,7 @@ export default function PalermoClient() {
 
           <div className="card micCard">
             <div>
-              <div className="cardTitle"><span>{t('voiceChat')}</span><b>{micState === 'granted' ? t('micReady') : t('optional')}</b></div>
+              <div className="cardTitle"><span>{t('voiceChat')}</span><b>{micState === 'granted' ? `${t('micReady')} · ${voiceConnectedCount} LINKED` : t('optional')}</b></div>
               <p>{t('voiceExplain')}</p>
               {micError && <small className="errorText">{micError}</small>}
             </div>
@@ -2814,7 +2881,7 @@ export default function PalermoClient() {
                 </div>
               )}
               <div className="card voiceBox">
-                <div className="cardTitle"><span>{t('voice')}</span><b>{micState === 'granted' ? (muted ? t('muted') : t('micReady')) : t('off')}</b></div>
+                <div className="cardTitle"><span>{t('voice')}</span><b>{micState === 'granted' ? (muted ? t('muted') : `${t('micReady')} · ${voiceConnectedCount} LINKED`) : t('off')}</b></div>
                 {micState !== 'granted' ? <button onClick={requestMic}>{t('enableMic')}</button> : <button onClick={toggleMute}>{muted ? t('unmute') : t('mute')}</button>}
                 <p>{t('voiceNext')}</p>
               </div>
