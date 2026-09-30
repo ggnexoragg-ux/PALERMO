@@ -108,3 +108,8 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
 .killerTeammatesNotice{margin:14px auto 18px;max-width:420px;padding:14px 16px;border:1px solid #6c3544;border-radius:12px;background:linear-gradient(180deg,#1a0d12,#10090c);display:grid;gap:5px;text-align:center}
 .killerTeammatesNotice small{font-size:9px;letter-spacing:.16em;color:#cf8798;font-weight:900}
 .killerTeammatesNotice strong{font-size:22px;color:#ffd3dd;word-break:break-word}
+
+.syncedRoleCountdown{margin-top:16px;padding:16px;border:1px solid #3c3150;border-radius:12px;background:#100c17;text-align:center;display:grid;gap:4px}
+.syncedRoleCountdown small{font-size:9px;font-weight:900;letter-spacing:.16em;color:#9e8eb7}
+.syncedRoleCountdown strong{font-size:42px;line-height:1;color:#e8dcff}
+.syncedRoleCountdown span{font-size:10px;color:#9e95aa}
