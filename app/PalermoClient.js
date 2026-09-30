@@ -512,6 +512,8 @@ export default function PalermoClient() {
   const [gameWinner, setGameWinner] = useState('')
   const [gameMvp, setGameMvp] = useState('')
   const [voteTimer, setVoteTimer] = useState(30)
+  const [phaseEndsAt, setPhaseEndsAt] = useState(0)
+  const [gameStartsAt, setGameStartsAt] = useState(0)
   const [dayMessages, setDayMessages] = useState([])
   const [dayText, setDayText] = useState('')
   const [menuMusicOn, setMenuMusicOn] = useState(true)
@@ -560,8 +562,60 @@ export default function PalermoClient() {
   const myRoleRef = useRef(null)
   const authSessionRef = useRef(null)
   const matchResultRecordedRef = useRef(false)
+  const clockOffsetRef = useRef(0)
+  const scheduledPhaseRef = useRef(null)
+  const scheduledGameRef = useRef(null)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
+  const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
+
+  function clearScheduledGameTimers() {
+    if (scheduledGameRef.current) clearTimeout(scheduledGameRef.current)
+    scheduledGameRef.current = null
+  }
+
+  function applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt) {
+    if (scheduledPhaseRef.current) clearTimeout(scheduledPhaseRef.current)
+
+    const apply = () => {
+      setPhase(nextPhase)
+      phaseRef.current = nextPhase
+      setRound(nextRound)
+      setPhaseEndsAt(Number(endsAt || 0))
+      setVote('')
+      setVoteLocked(false)
+
+      if (nextPhase === 'night') {
+        setKillerVote('')
+        setDoctorVote('')
+        setNightResolvedTarget('')
+        setNightSaved(false)
+        if (isHost) {
+          setKillerVotes({})
+          killerVotesRef.current = {}
+          setDoctorProtected('')
+          doctorProtectedRef.current = ''
+        }
+      } else if (nextPhase === 'vote') {
+        setPlayerVotes({})
+        playerVotesRef.current = {}
+      }
+
+      setTimeout(updateVoiceGate, 0)
+    }
+
+    const delay = Math.max(0, Number(startsAt || 0) - syncedHostNow())
+    if (delay <= 20) apply()
+    else scheduledPhaseRef.current = setTimeout(apply, delay)
+  }
+
+  function hostSchedulePhase(nextPhase, nextRound, durationSeconds, leadMs = 500) {
+    if (!isHost) return
+    const startsAt = Date.now() + leadMs
+    const endsAt = startsAt + durationSeconds * 1000
+    broadcast({ type: 'phase-change', phase: nextPhase, round: nextRound, startsAt, endsAt })
+    applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt)
+  }
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
   const avatarUrl = profile?.avatar_url || ''
 
@@ -985,30 +1039,27 @@ export default function PalermoClient() {
   }, [])
 
   useEffect(() => {
-    if (screen !== 'game' || phase !== 'night') return
-    setNightTimer(15)
-    setKillerVote('')
-    setDoctorVote('')
-    setNightResolvedTarget('')
-    setNightSaved(false)
-    if (isHost) {
-      setKillerVotes({})
-      killerVotesRef.current = {}
-      setDoctorProtected('')
-      doctorProtectedRef.current = ''
+    if (screen !== 'game' || !phaseEndsAt) return
+    let hostAdvanced = false
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((phaseEndsAt - syncedHostNow()) / 1000))
+      if (phase === 'night') setNightTimer(remaining)
+      if (phase === 'day') setDiscussion(remaining)
+      if (phase === 'vote') setVoteTimer(remaining)
+
+      if (remaining <= 0 && isHost && !hostAdvanced) {
+        hostAdvanced = true
+        if (phase === 'night') resolveKillerVotes(killerVotesRef.current, doctorProtectedRef.current)
+        else if (phase === 'day') hostSchedulePhase('vote', round, 30)
+        else if (phase === 'vote') resolveDayVote(playerVotesRef.current)
+      }
     }
-    const timer = setInterval(() => {
-      setNightTimer(v => {
-        if (v <= 1) {
-          clearInterval(timer)
-          if (isHost) setTimeout(() => resolveKillerVotes(killerVotesRef.current, doctorProtectedRef.current), 0)
-          return 0
-        }
-        return v - 1
-      })
-    }, 1000)
+
+    tick()
+    const timer = setInterval(tick, 200)
     return () => clearInterval(timer)
-  }, [screen, phase, round])
+  }, [screen, phase, phaseEndsAt, round, isHost])
 
   useEffect(() => {
     if (micState === 'granted') {
@@ -1027,50 +1078,21 @@ export default function PalermoClient() {
   }, [micState, screen, players.length])
 
   useEffect(() => {
+    if (isHost || !['lobby','role','game'].includes(screen)) return
+    const ping = () => {
+      if (hostConnRef.current?.open) {
+        hostConnRef.current.send({ type: 'clock-sync-ping', clientSentAt: Date.now() })
+      }
+    }
+    ping()
+    const timer = setInterval(ping, 3000)
+    return () => clearInterval(timer)
+  }, [isHost, screen, connectionState])
+
+  useEffect(() => {
     if (screen === 'home' && menuMusicOn) startMenuMusic()
     if (screen !== 'home') stopMenuMusic()
   }, [screen, menuMusicOn])
-
-  useEffect(() => {
-    if (screen !== 'game' || phase !== 'day') return
-    setDiscussion(120)
-    const timer = setInterval(() => {
-      setDiscussion(v => {
-        if (v <= 1) {
-          clearInterval(timer)
-          if (isHost) {
-            setPhase('vote')
-            setVoteTimer(30)
-            setPlayerVotes({})
-            playerVotesRef.current = {}
-            setVote('')
-            broadcast({ type: 'phase-change', phase: 'vote', round })
-          }
-          return 0
-        }
-        return v - 1
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [screen, phase, round, isHost])
-
-  useEffect(() => {
-    if (screen !== 'game' || phase !== 'vote') return
-    setVoteTimer(30)
-    setVote('')
-    setVoteLocked(false)
-    const timer = setInterval(() => {
-      setVoteTimer(v => {
-        if (v <= 1) {
-          clearInterval(timer)
-          if (isHost) resolveDayVote(playerVotesRef.current)
-          return 0
-        }
-        return v - 1
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [screen, phase, round, isHost])
 
   useEffect(() => {
     if (screen !== 'role' || !myRole) return
@@ -1164,6 +1186,8 @@ export default function PalermoClient() {
   useEffect(() => {
     return () => {
       stopNarrator()
+      clearScheduledGameTimers()
+      if (scheduledPhaseRef.current) clearTimeout(scheduledPhaseRef.current)
       peerRef.current?.destroy?.()
       closeAllVoice()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
@@ -1500,7 +1524,12 @@ export default function PalermoClient() {
     setSpectatorMessages([])
     setGameWinner('')
     setGameMvp('')
+    clearScheduledGameTimers()
+    if (scheduledPhaseRef.current) clearTimeout(scheduledPhaseRef.current)
+    scheduledPhaseRef.current = null
     setCountdown(null)
+    setGameStartsAt(0)
+    setPhaseEndsAt(0)
     setDiscussion(120)
     setVoteTimer(30)
     setReady(false)
@@ -1551,6 +1580,11 @@ export default function PalermoClient() {
 
     conn.on('data', data => {
       if (!data || typeof data !== 'object') return
+
+      if (data.type === 'clock-sync-ping') {
+        conn.send({ type: 'clock-sync-pong', clientSentAt: Number(data.clientSentAt || 0), hostNow: Date.now() })
+        return
+      }
 
       if (data.type === 'session-rejoin') {
         if (!sessionRejoinTokenRef.current || data.token !== sessionRejoinTokenRef.current) {
@@ -1742,6 +1776,16 @@ export default function PalermoClient() {
 
       conn.on('data', data => {
         if (!data || typeof data !== 'object') return
+        if (data.type === 'clock-sync-pong') {
+          const receivedAt = Date.now()
+          const sentAt = Number(data.clientSentAt || receivedAt)
+          const midpoint = sentAt + (receivedAt - sentAt) / 2
+          const sample = Number(data.hostNow || receivedAt) - midpoint
+          clockOffsetRef.current = clockOffsetRef.current
+            ? (clockOffsetRef.current * 0.7 + sample * 0.3)
+            : sample
+          return
+        }
         if (data.type === 'join-pending') {
           setJoinPending(true)
           setConnectionState('waiting')
@@ -1770,11 +1814,32 @@ export default function PalermoClient() {
         }
         if (data.type === 'countdown') setCountdown(data.value)
         if (data.type === 'game-start') {
+          const revealAt = Number(data.revealAt || syncedHostNow())
+          const startsAt = Number(data.gameStartsAt || (revealAt + 5000))
+          const firstNightEndsAt = Number(data.phaseEndsAt || (startsAt + 15000))
           setMyRole(data.role)
-          setPhase('night')
-          setRound(1)
-          setCountdown(null)
-          setScreen('role')
+          setGameStartsAt(startsAt)
+          setCountdown(5)
+
+          const updateRoleCountdown = () => {
+            setCountdown(Math.max(0, Math.ceil((startsAt - syncedHostNow()) / 1000)))
+          }
+          updateRoleCountdown()
+          const countdownTimer = setInterval(updateRoleCountdown, 100)
+
+          setTimeout(() => {
+            setScreen('role')
+            screenRef.current = 'role'
+          }, Math.max(0, revealAt - syncedHostNow()))
+
+          clearScheduledGameTimers()
+          scheduledGameRef.current = setTimeout(() => {
+            clearInterval(countdownTimer)
+            setCountdown(null)
+            setScreen('game')
+            screenRef.current = 'game'
+            applyPhaseSchedule('night', 1, startsAt, firstNightEndsAt)
+          }, Math.max(0, startsAt - syncedHostNow()))
         }
         if (data.type === 'night-result') {
           setNightResolvedTarget(data.target || '')
@@ -1838,16 +1903,12 @@ export default function PalermoClient() {
           screenRef.current = 'lobby'
         }
         if (data.type === 'phase-change') {
-          setPhase(data.phase || 'night')
-          setRound(data.round || 1)
-          if (data.phase === 'day') setDiscussion(180)
-          if (data.phase !== 'vote') {
-            setVote('')
-            setVoteLocked(false)
-          } else {
-            setVote('')
-            setVoteLocked(false)
-          }
+          applyPhaseSchedule(
+            data.phase || 'night',
+            data.round || 1,
+            Number(data.startsAt || syncedHostNow()),
+            Number(data.endsAt || 0)
+          )
         }
       })
 
@@ -1927,77 +1988,91 @@ export default function PalermoClient() {
     const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
     if (!isHost || players.length < 2 || !players.every(p => p.ready) || configuredRoleSlots > players.length) return
 
-    let value = 5
-    setCountdown(value)
-    broadcast({ type: 'countdown', value })
+    let pool = roles.flatMap(role => Array(role.count).fill(role))
+    while (pool.length < players.length) pool.push(citizen)
+    pool = shuffle(pool).slice(0, players.length)
 
-    const timer = setInterval(() => {
-      value -= 1
-      setCountdown(value)
-      broadcast({ type: 'countdown', value })
+    const assigned = players.map((player, index) => ({
+      player,
+      role: pool[index] || citizen,
+    }))
+    const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
+    const killerPlayers = assigned
+      .filter(entry => entry.role.id === 'visibleKiller' || entry.role.id === 'hiddenKiller')
+      .map(entry => entry.player)
+    const loverPlayers = assigned.filter(entry => entry.role.id === 'lover').map(entry => entry.player)
+    const roster = assigned.map(({ player, role }) => ({
+      id: player.id,
+      name: player.name,
+      roleId: role.id,
+      alive: true,
+    }))
 
-      if (value <= 0) {
-        clearInterval(timer)
+    const revealAt = Date.now() + 1500
+    const startsAt = revealAt + 5000
+    const firstNightEndsAt = startsAt + 15000
 
-        let pool = roles.flatMap(role => Array(role.count).fill(role))
-        while (pool.length < players.length) pool.push(citizen)
-        pool = shuffle(pool).slice(0, players.length)
+    setGameRoster(roster)
+    gameRosterRef.current = roster
+    setPlayerVotes({})
+    setVoteScores({})
+    setIsDead(false)
+    setGameWinner('')
+    setGameMvp('')
+    matchResultRecordedRef.current = false
+    setKamikazeUsed(false)
+    kamikazeUsedRef.current = new Set()
+    setDayMessages([])
+    setGameStartsAt(startsAt)
+    setPhaseEndsAt(firstNightEndsAt)
+    broadcast({ type: 'game-state', roster: publicRoster(roster) })
 
-        const assigned = players.map((player, index) => ({
-          player,
-          role: pool[index] || citizen,
-        }))
-        const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
-        const killerPlayers = assigned
-          .filter(entry => entry.role.id === 'visibleKiller' || entry.role.id === 'hiddenKiller')
-          .map(entry => entry.player)
-        const loverPlayers = assigned.filter(entry => entry.role.id === 'lover').map(entry => entry.player)
-        const roster = assigned.map(({ player, role }) => ({
-          id: player.id,
-          name: player.name,
-          roleId: role.id,
-          alive: true,
-        }))
-        setGameRoster(roster)
-        gameRosterRef.current = roster
-        setPlayerVotes({})
-        setVoteScores({})
-        setIsDead(false)
-        setGameWinner('')
-        setGameMvp('')
-        matchResultRecordedRef.current = false
-        setKamikazeUsed(false)
-        kamikazeUsedRef.current = new Set()
-        setDayMessages([])
-        setVoteTimer(30)
-        broadcast({ type: 'game-state', roster: publicRoster(roster) })
+    assigned.forEach(({ player, role }) => {
+      let privateRole = role.id === 'detective' && visibleKillerPlayer
+        ? { ...role, knownVisibleKiller: visibleKillerPlayer.name }
+        : role
 
-        assigned.forEach(({ player, role }) => {
-          let privateRole = role.id === 'detective' && visibleKillerPlayer
-            ? { ...role, knownVisibleKiller: visibleKillerPlayer.name }
-            : role
-          if (role.id === 'visibleKiller' || role.id === 'hiddenKiller') {
-            const teammates = killerPlayers.filter(p => p.id !== player.id).map(p => p.name)
-            privateRole = { ...privateRole, killerTeammates: teammates }
-          }
-          if (role.id === 'lover' && loverPlayers.length >= 2) {
-            const partner = loverPlayers.find(p => p.id !== player.id)
-            if (partner) privateRole = { ...privateRole, loverPartner: partner.name }
-          }
-
-          if (player.isHost) {
-            setMyRole(privateRole)
-          } else {
-            guestConnsRef.current.get(player.id)?.send({ type: 'game-start', role: privateRole })
-          }
-        })
-
-        setPhase('night')
-        setRound(1)
-        setCountdown(null)
-        setScreen('role')
+      if (role.id === 'visibleKiller' || role.id === 'hiddenKiller') {
+        const teammates = killerPlayers.filter(p => p.id !== player.id).map(p => p.name)
+        privateRole = { ...privateRole, killerTeammates: teammates }
       }
-    }, 1000)
+      if (role.id === 'lover' && loverPlayers.length >= 2) {
+        const partner = loverPlayers.find(p => p.id !== player.id)
+        if (partner) privateRole = { ...privateRole, loverPartner: partner.name }
+      }
+
+      const payload = {
+        type: 'game-start',
+        role: privateRole,
+        revealAt,
+        gameStartsAt: startsAt,
+        phaseEndsAt: firstNightEndsAt,
+      }
+
+      if (player.isHost) setMyRole(privateRole)
+      else guestConnsRef.current.get(player.id)?.send(payload)
+    })
+
+    setCountdown(5)
+    const updateRoleCountdown = () => {
+      setCountdown(Math.max(0, Math.ceil((startsAt - Date.now()) / 1000)))
+    }
+    updateRoleCountdown()
+    const countdownTimer = setInterval(updateRoleCountdown, 100)
+
+    setTimeout(() => {
+      setScreen('role')
+      screenRef.current = 'role'
+    }, Math.max(0, revealAt - Date.now()))
+
+    clearScheduledGameTimers()
+    scheduledGameRef.current = setTimeout(() => {
+      clearInterval(countdownTimer)
+      setCountdown(null)
+      setScreen('game')
+      screenRef.current = 'game'
+      applyPhaseSchedule('night', 1, startsAt, firstNightEndsAt)
+    }, Math.max(0, startsAt - Date.now()))
   }
 
   async function requestMic() {
@@ -2297,9 +2372,7 @@ export default function PalermoClient() {
     playerVotesRef.current = {}
     setVote('')
     setVoteLocked(false)
-    setPhase('night')
-    setRound(nextRound)
-    broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
+    hostSchedulePhase('night', nextRound, 15)
   }
 
   function resolveKillerVotes(currentKillerVotes = killerVotesRef.current, currentDoctorProtected = doctorProtectedRef.current) {
@@ -2340,9 +2413,7 @@ export default function PalermoClient() {
       }
     }
 
-    setPhase('day')
-    setDiscussion(120)
-    broadcast({ type: 'phase-change', phase: 'day', round })
+    hostSchedulePhase('day', round, 120)
   }
 
   function nextPhase() {
@@ -2350,8 +2421,7 @@ export default function PalermoClient() {
     if (phase === 'night') {
       resolveKillerVotes()
     } else {
-      setPhase('vote')
-      broadcast({ type: 'phase-change', phase: 'vote', round })
+      hostSchedulePhase('vote', round, 30)
     }
   }
 
@@ -2817,7 +2887,11 @@ export default function PalermoClient() {
               : myRole.id === 'madness'
               ? t('roleMadness')
               : t('roleCitizen')}</p>
-            <button className="primary wide" onClick={() => setScreen('game')}>{t('understand')}</button>
+            <div className="syncedRoleCountdown">
+              <small>{lang === 'el' ? 'ΤΟ ΠΑΙΧΝΙΔΙ ΞΕΚΙΝΑ ΣΕ' : 'GAME STARTS IN'}</small>
+              <strong>{countdown ?? 0}</strong>
+              <span>{lang === 'el' ? 'Όλοι οι παίκτες ξεκινούν ταυτόχρονα' : 'All players start together'}</span>
+            </div>
           </div>
         </section>
       )}
