@@ -177,8 +177,8 @@ const TEXT = {
     kamikaze: 'Kamikaze',
     madness: 'Madness',
     citizen: 'Citizen',
-    roleVisibleKiller: 'You are the revealed killer. Each night, choose a target privately. You do not know the hidden killer\'s identity or choice.',
-    roleHiddenKiller: 'You are the hidden killer. Each night, choose a target privately. You do not know the revealed killer\'s identity or choice.',
+    roleVisibleKiller: 'You are the revealed killer. Each night, choose a target privately. You know who the other killer is, but you still choose your target independently.',
+    roleHiddenKiller: 'You are the hidden killer. Each night, choose a target privately. You know who the other killer is, but you still choose your target independently.',
     roleDetective: 'You know who the revealed killer is. Use that information carefully without exposing yourself.',
     roleDoctor: 'Protect one player each night.',
     roleLover: 'You are linked to another Lover. If either of you dies, the other dies too.',
@@ -346,8 +346,8 @@ const TEXT = {
     kamikaze: 'Καμικάζε',
     madness: 'Τρέλα',
     citizen: 'Πολίτης',
-    roleVisibleKiller: 'Είσαι ο Φανερός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Δεν γνωρίζεις ποιος είναι ο Κρυφός Δολοφόνος ούτε την επιλογή του.',
-    roleHiddenKiller: 'Είσαι ο Κρυφός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Δεν γνωρίζεις ποιος είναι ο Φανερός Δολοφόνος ούτε την επιλογή του.',
+    roleVisibleKiller: 'Είσαι ο Φανερός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Γνωρίζεις ποιος είναι ο άλλος δολοφόνος, αλλά επιλέγεις τον στόχο σου ανεξάρτητα.',
+    roleHiddenKiller: 'Είσαι ο Κρυφός Δολοφόνος. Κάθε νύχτα επιλέγεις ιδιωτικά έναν στόχο. Γνωρίζεις ποιος είναι ο άλλος δολοφόνος, αλλά επιλέγεις τον στόχο σου ανεξάρτητα.',
     roleDetective: 'Γνωρίζεις ποιος είναι ο Φανερός Δολοφόνος. Χρησιμοποίησε αυτή την πληροφορία προσεκτικά χωρίς να αποκαλυφθείς.',
     roleDoctor: 'Προστάτεψε έναν παίκτη κάθε βράδυ.',
     roleLover: 'Είσαι δεμένος με έναν άλλο Ερωτευμένο. Αν πεθάνει ένας από τους δύο, πεθαίνει και ο άλλος.',
@@ -1854,6 +1854,9 @@ export default function PalermoClient() {
           role: pool[index] || citizen,
         }))
         const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
+        const killerPlayers = assigned
+          .filter(entry => entry.role.id === 'visibleKiller' || entry.role.id === 'hiddenKiller')
+          .map(entry => entry.player)
         const loverPlayers = assigned.filter(entry => entry.role.id === 'lover').map(entry => entry.player)
         const roster = assigned.map(({ player, role }) => ({
           id: player.id,
@@ -1879,6 +1882,10 @@ export default function PalermoClient() {
           let privateRole = role.id === 'detective' && visibleKillerPlayer
             ? { ...role, knownVisibleKiller: visibleKillerPlayer.name }
             : role
+          if (role.id === 'visibleKiller' || role.id === 'hiddenKiller') {
+            const teammates = killerPlayers.filter(p => p.id !== player.id).map(p => p.name)
+            privateRole = { ...privateRole, killerTeammates: teammates }
+          }
           if (role.id === 'lover' && loverPlayers.length >= 2) {
             const partner = loverPlayers.find(p => p.id !== player.id)
             if (partner) privateRole = { ...privateRole, loverPartner: partner.name }
@@ -2691,6 +2698,12 @@ export default function PalermoClient() {
             <div className="roleEmoji">{myRole.emoji}</div>
             <small>{t('yourRole')}</small>
             <h2>{roleName(myRole).toUpperCase()}</h2>
+            {(myRole.id === 'visibleKiller' || myRole.id === 'hiddenKiller') && myRole.killerTeammates?.length > 0 && (
+              <div className="killerTeammatesNotice">
+                <small>{lang === 'el' ? 'ΑΛΛΟΣ ΔΟΛΟΦΟΝΟΣ' : 'OTHER KILLER'}</small>
+                <strong>{myRole.killerTeammates.join(', ')}</strong>
+              </div>
+            )}
             {myRole.id === 'lover' && myRole.loverPartner && <div className="prototypeNotice">❤️ {myRole.loverPartner}</div>}
             <p>{myRole.id === 'visibleKiller'
               ? t('roleVisibleKiller')
@@ -3113,7 +3126,7 @@ export default function PalermoClient() {
             <div className="howToSection">
               <h3>{lang === 'el' ? 'ΝΥΧΤΑ' : 'NIGHT'}</h3>
               <ul>
-                <li>{lang === 'el' ? 'Στα μεγαλύτερα παιχνίδια, οι δύο δολοφόνοι επιλέγουν ξεχωριστά στόχο μέσα σε 15 δευτερόλεπτα και δεν βλέπουν ποιος είναι ο άλλος δολοφόνος. Στα μικρότερα παιχνίδια μπορεί να υπάρχει μόνο ένας δολοφόνος.' : 'In larger games, both killers independently choose a target within 15 seconds and do not know the other killer’s identity. Smaller games may use only one killer.'}</li>
+                <li>{lang === 'el' ? 'Στα μεγαλύτερα παιχνίδια, οι δολοφόνοι γνωρίζουν ποιοι είναι οι άλλοι δολοφόνοι, αλλά επιλέγουν ξεχωριστά στόχο μέσα σε 15 δευτερόλεπτα. Στα μικρότερα παιχνίδια μπορεί να υπάρχει μόνο ένας δολοφόνος.' : 'In larger games, killers know who the other killers are, but each still chooses a target independently within 15 seconds. Smaller games may use only one killer.'}</li>
                 <li>{lang === 'el' ? 'Αν επιλέξουν το ίδιο άτομο, αυτό είναι ο στόχος. Αν επιλέξουν διαφορετικούς, το παιχνίδι επιλέγει τυχαία ανάμεσα στους δύο στόχους.' : 'If both killers choose the same person, that is the target. If they disagree, the game randomly chooses between their two targets.'}</li>
                 <li>{lang === 'el' ? 'Ο Γιατρός προστατεύει έναν ζωντανό παίκτη κάθε νύχτα, ακόμα και τον εαυτό του ή έναν δολοφόνο. Αν προστατέψει το θύμα, κανείς δεν πεθαίνει.' : 'The Doctor protects one living player every night, including themself or a killer. If the protected player is targeted, nobody dies.'}</li>
                 <li>{lang === 'el' ? 'Την πρώτη νύχτα ο Ντετέκτιβ βλέπει ποιος είναι ο Φανερός Δολοφόνος.' : 'On the first night, the Detective privately learns who the Revealed Killer is.'}</li>
@@ -3124,8 +3137,8 @@ export default function PalermoClient() {
             <div className="howToSection">
               <h3>{lang === 'el' ? 'ΡΟΛΟΙ' : 'ROLES'}</h3>
               <div className="roleGuideGrid">
-                <div><strong>🔪 {t('visibleKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Επιλέγει κρυφά έναν στόχο κάθε νύχτα. Δεν γνωρίζει ποιος είναι ο Κρυφός Δολοφόνος.' : 'Killer. Privately chooses one target each night. Does not know who the Hidden Killer is.'}</p></div>
-                <div><strong>🗡️ {t('hiddenKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Έχει την ίδια νυχτερινή ενέργεια και δεν γνωρίζει ποιος είναι ο Φανερός Δολοφόνος.' : 'Killer. Has the same nightly action and does not know who the Revealed Killer is.'}</p></div>
+                <div><strong>🔪 {t('visibleKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Επιλέγει κρυφά έναν στόχο κάθε νύχτα και γνωρίζει ποιοι είναι οι άλλοι δολοφόνοι.' : 'Killer. Privately chooses one target each night and knows who the other killers are.'}</p></div>
+                <div><strong>🗡️ {t('hiddenKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Έχει την ίδια νυχτερινή ενέργεια και γνωρίζει ποιοι είναι οι άλλοι δολοφόνοι.' : 'Killer. Has the same nightly action and knows who the other killers are.'}</p></div>
                 <div><strong>🕵️ {t('detective')}</strong><p>{lang === 'el' ? 'Την πρώτη νύχτα μαθαίνει ιδιωτικά ποιος είναι ο Φανερός Δολοφόνος.' : 'Privately learns the Revealed Killer’s identity on the first night.'}</p></div>
                 <div><strong>🩺 {t('doctor')}</strong><p>{lang === 'el' ? 'Προστατεύει έναν παίκτη κάθε νύχτα. Μπορεί να προστατεύσει και τον εαυτό του.' : 'Protects one player every night and may protect themself.'}</p></div>
                 <div><strong>❤️ {t('lover')}</strong><p>{lang === 'el' ? 'Οι δύο Ερωτευμένοι είναι δεμένοι. Αν πεθάνει ο ένας, πεθαίνει και ο άλλος.' : 'The two Lovers are linked. If one dies, the other dies as well.'}</p></div>
