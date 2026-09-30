@@ -200,6 +200,15 @@ const TEXT = {
     leaveGame: 'LEAVE',
     leaveGameHint: 'Return to the server browser.',
     preparingSession: 'PREPARING NEW SESSION...',
+    dead: 'DEAD',
+    spectatorOnly: 'SPECTATOR ONLY',
+    spectatorChat: 'SPECTATOR CHAT',
+    spectatorChatHint: 'Only dead players and spectators can see these messages.',
+    send: 'SEND',
+    madnessWins: 'MADNESS WINS',
+    citizensWin: 'CITIZENS WIN',
+    killersWin: 'KILLERS WIN',
+    mvp: 'MVP',
     madeBy: 'Made by'
   },
   el: {
@@ -343,6 +352,15 @@ const TEXT = {
     leaveGame: 'ΕΞΟΔΟΣ',
     leaveGameHint: 'Επιστροφή στους servers.',
     preparingSession: 'ΠΡΟΕΤΟΙΜΑΣΙΑ ΝΕΟΥ SESSION...',
+    dead: 'ΝΕΚΡΟΣ',
+    spectatorOnly: 'ΜΟΝΟ ΘΕΑΤΗΣ',
+    spectatorChat: 'CHAT ΘΕΑΤΩΝ',
+    spectatorChatHint: 'Μόνο νεκροί παίκτες και θεατές βλέπουν αυτά τα μηνύματα.',
+    send: 'ΑΠΟΣΤΟΛΗ',
+    madnessWins: 'Η ΤΡΕΛΑ ΝΙΚΑ',
+    citizensWin: 'ΟΙ ΠΟΛΙΤΕΣ ΝΙΚΟΥΝ',
+    killersWin: 'ΟΙ ΔΟΛΟΦΟΝΟΙ ΝΙΚΟΥΝ',
+    mvp: 'MVP',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -407,6 +425,14 @@ export default function PalermoClient() {
   const [doctorProtected, setDoctorProtected] = useState('')
   const [nightSaved, setNightSaved] = useState(false)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
+  const [gameRoster, setGameRoster] = useState([])
+  const [playerVotes, setPlayerVotes] = useState({})
+  const [voteScores, setVoteScores] = useState({})
+  const [isDead, setIsDead] = useState(false)
+  const [spectatorMessages, setSpectatorMessages] = useState([])
+  const [spectatorText, setSpectatorText] = useState('')
+  const [gameWinner, setGameWinner] = useState('')
+  const [gameMvp, setGameMvp] = useState('')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -647,6 +673,14 @@ export default function PalermoClient() {
         setDoctorProtected(String(data.target || ''))
       }
 
+      if (data.type === 'player-vote') {
+        registerDayVote(conn.peer, String(data.target || ''))
+      }
+
+      if (data.type === 'spectator-chat') {
+        sendSpectatorMessage(String(data.text || ''), conn.peer)
+      }
+
       if (data.type === 'ready') {
         setPlayers(current => {
           const next = current.map(p => p.id === conn.peer ? { ...p, ready: !!data.ready } : p)
@@ -781,7 +815,18 @@ export default function PalermoClient() {
           setNightResolvedTarget(data.target || '')
           setNightSaved(!!data.saved)
         }
+        if (data.type === 'game-state') {
+          setGameRoster(data.roster || [])
+        }
+        if (data.type === 'eliminated') {
+          setIsDead(true)
+        }
+        if (data.type === 'spectator-chat') {
+          setSpectatorMessages(current => [...current.slice(-49), data.message])
+        }
         if (data.type === 'game-over') {
+          setGameWinner(data.winner || '')
+          setGameMvp(data.mvp || '')
           setScreen('gameOver')
         }
         if (data.type === 'session-transition') {
@@ -873,6 +918,19 @@ export default function PalermoClient() {
           role: pool[index] || citizen,
         }))
         const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
+        const roster = assigned.map(({ player, role }) => ({
+          id: player.id,
+          name: player.name,
+          roleId: role.id,
+          alive: true,
+        }))
+        setGameRoster(roster)
+        setPlayerVotes({})
+        setVoteScores({})
+        setIsDead(false)
+        setGameWinner('')
+        setGameMvp('')
+        broadcast({ type: 'game-state', roster })
 
         assigned.forEach(({ player, role }) => {
           const privateRole = role.id === 'detective' && visibleKillerPlayer
@@ -966,6 +1024,112 @@ export default function PalermoClient() {
     }
   }
 
+  function aliveRoster(roster = gameRoster) {
+    return roster.filter(p => p.alive)
+  }
+
+  function finishMatch(winner, roster = gameRoster, scores = voteScores) {
+    if (!isHost) return
+    const scoreEntries = Object.entries(scores)
+    const maxScore = scoreEntries.length ? Math.max(...scoreEntries.map(([, score]) => score)) : 0
+    const mvpId = scoreEntries.find(([, score]) => score === maxScore && score > 0)?.[0]
+    const mvp = roster.find(p => p.id === mvpId)?.name || ''
+    setGameWinner(winner)
+    setGameMvp(mvp)
+    setScreen('gameOver')
+    broadcast({ type: 'game-over', winner, mvp })
+  }
+
+  function checkWin(roster, eliminatedRoleId = '', scores = voteScores) {
+    if (eliminatedRoleId === 'madness') {
+      finishMatch('madness', roster, scores)
+      return true
+    }
+    const alive = aliveRoster(roster)
+    const killers = alive.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
+    const nonKillers = alive.filter(p => p.roleId !== 'visibleKiller' && p.roleId !== 'hiddenKiller')
+    if (killers.length === 0) {
+      finishMatch('citizens', roster, scores)
+      return true
+    }
+    if (killers.length > 0 && nonKillers.length <= 1) {
+      finishMatch('killers', roster, scores)
+      return true
+    }
+    return false
+  }
+
+  function sendSpectatorMessage(rawText, senderId = peerRef.current?.id) {
+    const text = String(rawText || '').trim().slice(0, 300)
+    if (!text) return
+    const sender = gameRoster.find(p => p.id === senderId) || spectators.find(p => p.id === senderId)
+    const senderDead = gameRoster.some(p => p.id === senderId && !p.alive)
+    const senderSpectator = spectators.some(p => p.id === senderId)
+    if (senderId === peerRef.current?.id) {
+      if (!isDead && joinMode !== 'spectator') return
+    } else if (!senderDead && !senderSpectator) return
+    const message = { id: crypto.randomUUID(), name: sender?.name || name || 'Spectator', text, at: Date.now() }
+    setSpectatorMessages(current => [...current.slice(-49), message])
+    guestConnsRef.current.forEach((conn, peerId) => {
+      const deadPeer = gameRoster.some(p => p.id === peerId && !p.alive)
+      const spectatorPeer = spectators.some(p => p.id === peerId)
+      if (conn?.open && (deadPeer || spectatorPeer)) conn.send({ type: 'spectator-chat', message })
+    })
+    setSpectatorText('')
+  }
+
+  function registerDayVote(voterId, target) {
+    if (!isHost || phase !== 'vote' || !target) return
+    const voter = gameRoster.find(p => p.id === voterId)
+    if (!voter?.alive) return
+    setPlayerVotes(current => {
+      const next = { ...current, [voterId]: target }
+      const living = aliveRoster()
+      if (Object.keys(next).length >= living.length) setTimeout(() => resolveDayVote(next), 0)
+      return next
+    })
+  }
+
+  function resolveDayVote(votesMap) {
+    if (!isHost) return
+    const counts = {}
+    Object.values(votesMap).forEach(target => {
+      if (target && target !== 'skip') counts[target] = (counts[target] || 0) + 1
+    })
+    const ranked = Object.entries(counts).sort((a,b) => b[1] - a[1])
+    const topCount = ranked[0]?.[1] || 0
+    const tied = ranked.filter(([, count]) => count === topCount).map(([target]) => target)
+    const eliminatedName = tied.length === 1 ? tied[0] : ''
+
+    const nextScores = { ...voteScores }
+    Object.entries(votesMap).forEach(([voterId, target]) => {
+      const targetPlayer = gameRoster.find(p => p.name === target)
+      if (targetPlayer && (targetPlayer.roleId === 'visibleKiller' || targetPlayer.roleId === 'hiddenKiller')) {
+        nextScores[voterId] = (nextScores[voterId] || 0) + 1
+      }
+    })
+    setVoteScores(nextScores)
+
+    if (eliminatedName) {
+      const victim = gameRoster.find(p => p.name === eliminatedName && p.alive)
+      if (victim) {
+        const nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        setGameRoster(nextRoster)
+        broadcast({ type: 'game-state', roster: nextRoster })
+        if (victim.id === peerRef.current?.id) setIsDead(true)
+        else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'vote' })
+        if (checkWin(nextRoster, victim.roleId, nextScores)) return
+      }
+    }
+
+    const nextRound = round + 1
+    setPlayerVotes({})
+    setVote('')
+    setPhase('night')
+    setRound(nextRound)
+    broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
+  }
+
   function resolveKillerVotes() {
     if (!isHost || phase !== 'night') return
     const values = Object.values(killerVotes).filter(Boolean)
@@ -983,6 +1147,19 @@ export default function PalermoClient() {
     setNightSaved(saved)
     setNightResolvedTarget(resolvedTarget)
     broadcast({ type: 'night-result', target: resolvedTarget, saved })
+
+    if (resolvedTarget) {
+      const victim = gameRoster.find(p => p.name === resolvedTarget && p.alive)
+      if (victim) {
+        const nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        setGameRoster(nextRoster)
+        broadcast({ type: 'game-state', roster: nextRoster })
+        if (victim.id === peerRef.current?.id) setIsDead(true)
+        else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'night' })
+        if (checkWin(nextRoster, '')) return
+      }
+    }
+
     setPhase('day')
     setDiscussion(180)
     broadcast({ type: 'phase-change', phase: 'day', round })
@@ -996,12 +1173,6 @@ export default function PalermoClient() {
       setPhase('vote')
       broadcast({ type: 'phase-change', phase: 'vote', round })
     }
-  }
-
-  function endGame() {
-    if (!isHost) return
-    setScreen('gameOver')
-    broadcast({ type: 'game-over' })
   }
 
   function sessionSettings() {
@@ -1034,6 +1205,13 @@ export default function PalermoClient() {
     setPhase('night')
     setRound(1)
     setVote('')
+    setGameRoster([])
+    setPlayerVotes({})
+    setVoteScores({})
+    setIsDead(false)
+    setSpectatorMessages([])
+    setGameWinner('')
+    setGameMvp('')
     setConnectionState('idle')
     setConnectionError('')
     setSessionTransitioning(false)
@@ -1157,12 +1335,11 @@ export default function PalermoClient() {
   }
 
   function finishVote() {
-    if (!isHost) return
-    const nextRound = round + 1
-    setPhase('night')
-    setRound(nextRound)
-    setVote('')
-    broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
+    if (!vote || isDead) return
+    const voterId = peerRef.current?.id
+    if (!voterId) return
+    if (isHost) registerDayVote(voterId, vote)
+    else hostConnRef.current?.send({ type: 'player-vote', target: vote })
   }
 
   const timerText = `${String(Math.floor(discussion / 60)).padStart(2, '0')}:${String(discussion % 60).padStart(2, '0')}`
@@ -1424,7 +1601,7 @@ export default function PalermoClient() {
                       : 'You have 15 seconds to choose a target. You cannot see the other killer’s choice.'}</p>
                     <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
                     <div className="targetGrid">
-                      {players.filter(p => p.name !== name).map(p => (
+                      {gameRoster.filter(p => p.alive && p.name !== name).map(p => (
                         <button
                           key={p.id}
                           className={killerVote === p.name ? 'selected' : ''}
@@ -1446,7 +1623,7 @@ export default function PalermoClient() {
                       : 'You have 15 seconds to protect one player. You may choose yourself.'}</p>
                     <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
                     <div className="targetGrid">
-                      {players.map(p => (
+                      {gameRoster.filter(p => p.alive).map(p => (
                         <button
                           key={p.id}
                           className={doctorVote === p.name ? 'selected' : ''}
@@ -1496,12 +1673,12 @@ export default function PalermoClient() {
                 <div className="bigIcon">🗳️</div>
                 <h3>{t('castVote')}</h3>
                 <div className="voteList">
-                  {players.filter(p => p.name !== name).map(p => (
+                  {gameRoster.filter(p => p.alive && p.name !== name).map(p => (
                     <button className={vote === p.name ? 'selected' : ''} onClick={() => setVote(p.name)} key={p.id}>{p.name}</button>
                   ))}
                   <button className={vote === 'skip' ? 'selected' : ''} onClick={() => setVote('skip')}>{t('skipVote')}</button>
                 </div>
-                <button className="primary wide" disabled={!vote} onClick={finishVote}>{t('lockVote')}</button>
+                <button className="primary wide" disabled={!vote || isDead} onClick={finishVote}>{t('lockVote')}</button>
               </>}
             </div>
 
@@ -1509,17 +1686,26 @@ export default function PalermoClient() {
               <div className="card miniRole">
                 <small>{t('yourRole')}</small>
                 <strong>{myRole?.emoji} {roleName(myRole)}</strong>
-                <span>{t('alive')}</span>
+                <span>{isDead ? ('☠ ' + t('dead') + ' // ' + t('spectatorOnly')) : t('alive')}</span>
               </div>
               <div className="card voiceBox">
                 <div className="cardTitle"><span>{t('narrator')}</span><b>{narratorOn ? t('narratorOn') : t('narratorOff')}</b></div>
                 <button onClick={() => { window.speechSynthesis?.cancel?.(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
                 <p>{t('narratorHint')}</p>
               </div>
-              {isHost && (
-                <div className="card voiceBox">
-                  <div className="cardTitle"><span>{t('gameOver')}</span><b>HOST</b></div>
-                  <button className="danger" onClick={endGame}>{t('endGame')}</button>
+              {(isDead || joinMode === 'spectator') && (
+                <div className="card spectatorChat">
+                  <div className="cardTitle"><span>{t('spectatorChat')}</span><b>{t('spectatorOnly')}</b></div>
+                  <p>{t('spectatorChatHint')}</p>
+                  <div className="spectatorMessages">
+                    {spectatorMessages.map(msg => (
+                      <div key={msg.id}><strong>{msg.name}</strong><span>{msg.text}</span></div>
+                    ))}
+                  </div>
+                  <form onSubmit={e => { e.preventDefault(); if (isHost) sendSpectatorMessage(spectatorText); else { hostConnRef.current?.send({ type:'spectator-chat', text:spectatorText }); setSpectatorText('') } }}>
+                    <input value={spectatorText} onChange={e => setSpectatorText(e.target.value)} maxLength={300} placeholder={t('spectatorChat')} />
+                    <button type="submit" disabled={!spectatorText.trim()}>{t('send')}</button>
+                  </form>
                 </div>
               )}
               <div className="card voiceBox">
@@ -1537,7 +1723,8 @@ export default function PalermoClient() {
           <div className="roleReveal card endGameCard">
             <div className="palermoEyebrow">PALERMO // SESSION COMPLETE</div>
             <div className="roleEmoji">🏁</div>
-            <h2>{t('gameOver')}</h2>
+            <h2>{gameWinner === 'madness' ? t('madnessWins') : gameWinner === 'killers' ? t('killersWin') : gameWinner === 'citizens' ? t('citizensWin') : t('gameOver')}</h2>
+            {gameMvp && <div className="mvpBanner"><small>{t('mvp')}</small><strong>★ {gameMvp}</strong></div>}
             <p>{t('whatNext')}</p>
 
             {isHost ? (
