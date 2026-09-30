@@ -465,6 +465,9 @@ export default function PalermoClient() {
   const playerVotesRef = useRef({})
   const killerVotesRef = useRef({})
   const doctorProtectedRef = useRef('')
+  const gameRosterRef = useRef([])
+  const phaseRef = useRef('night')
+  const spectatorsRef = useRef([])
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
@@ -536,6 +539,10 @@ export default function PalermoClient() {
     utterance.pitch = 1
     window.speechSynthesis.speak(utterance)
   }
+
+  useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
+  useEffect(() => { phaseRef.current = phase }, [phase])
+  useEffect(() => { spectatorsRef.current = spectators }, [spectators])
 
   useEffect(() => {
     const existing = document.querySelector('script[data-peerjs]')
@@ -788,7 +795,7 @@ export default function PalermoClient() {
       }
 
       if (data.type === 'killer-vote') {
-        const actor = gameRoster.find(p => p.id === conn.peer)
+        const actor = gameRosterRef.current.find(p => p.id === conn.peer)
         if (actor?.alive && (actor.roleId === 'visibleKiller' || actor.roleId === 'hiddenKiller')) {
           const target = String(data.target || '')
           killerVotesRef.current = { ...killerVotesRef.current, [conn.peer]: target }
@@ -797,7 +804,7 @@ export default function PalermoClient() {
       }
 
       if (data.type === 'doctor-vote') {
-        const actor = gameRoster.find(p => p.id === conn.peer)
+        const actor = gameRosterRef.current.find(p => p.id === conn.peer)
         if (actor?.alive && actor.roleId === 'doctor') {
           const target = String(data.target || '')
           doctorProtectedRef.current = target
@@ -973,6 +980,7 @@ export default function PalermoClient() {
         if (data.type === 'game-over') {
           setGameWinner(data.winner || '')
           setGameMvp(data.mvp || '')
+          if (Array.isArray(data.roster)) setGameRoster(data.roster)
           setScreen('gameOver')
         }
         if (data.type === 'session-transition') {
@@ -1077,6 +1085,7 @@ export default function PalermoClient() {
           alive: true,
         }))
         setGameRoster(roster)
+        gameRosterRef.current = roster
         setPlayerVotes({})
         setVoteScores({})
         setIsDead(false)
@@ -1084,7 +1093,7 @@ export default function PalermoClient() {
         setGameMvp('')
         setDayMessages([])
         setVoteTimer(30)
-        broadcast({ type: 'game-state', roster })
+        broadcast({ type: 'game-state', roster: publicRoster(roster) })
 
         assigned.forEach(({ player, role }) => {
           let privateRole = role.id === 'detective' && visibleKillerPlayer
@@ -1186,7 +1195,11 @@ export default function PalermoClient() {
     }
   }
 
-  function aliveRoster(roster = gameRoster) {
+  function publicRoster(roster) {
+    return roster.map(({ id, name, alive }) => ({ id, name, alive }))
+  }
+
+  function aliveRoster(roster = gameRosterRef.current) {
     return roster.filter(p => p.alive)
   }
 
@@ -1199,7 +1212,8 @@ export default function PalermoClient() {
     setGameWinner(winner)
     setGameMvp(mvp)
     setScreen('gameOver')
-    broadcast({ type: 'game-over', winner, mvp })
+    retireRoomRegistry(roomCode).catch(() => {})
+    broadcast({ type: 'game-over', winner, mvp, roster })
   }
 
   function applyLoverChain(roster, victim) {
@@ -1235,17 +1249,19 @@ export default function PalermoClient() {
   function sendSpectatorMessage(rawText, senderId = peerRef.current?.id) {
     const text = String(rawText || '').trim().slice(0, 300)
     if (!text) return
-    const sender = gameRoster.find(p => p.id === senderId) || spectators.find(p => p.id === senderId)
-    const senderDead = gameRoster.some(p => p.id === senderId && !p.alive)
-    const senderSpectator = spectators.some(p => p.id === senderId)
+    const rosterNow = gameRosterRef.current
+    const spectatorsNow = spectatorsRef.current
+    const sender = rosterNow.find(p => p.id === senderId) || spectatorsNow.find(p => p.id === senderId)
+    const senderDead = rosterNow.some(p => p.id === senderId && !p.alive)
+    const senderSpectator = spectatorsNow.some(p => p.id === senderId)
     if (senderId === peerRef.current?.id) {
       if (!isDead && joinMode !== 'spectator') return
     } else if (!senderDead && !senderSpectator) return
     const message = { id: crypto.randomUUID(), name: sender?.name || name || 'Spectator', text, at: Date.now() }
     setSpectatorMessages(current => [...current.slice(-49), message])
     guestConnsRef.current.forEach((conn, peerId) => {
-      const deadPeer = gameRoster.some(p => p.id === peerId && !p.alive)
-      const spectatorPeer = spectators.some(p => p.id === peerId)
+      const deadPeer = rosterNow.some(p => p.id === peerId && !p.alive)
+      const spectatorPeer = spectatorsNow.some(p => p.id === peerId)
       if (conn?.open && (deadPeer || spectatorPeer)) conn.send({ type: 'spectator-chat', message })
     })
     setSpectatorText('')
@@ -1253,26 +1269,27 @@ export default function PalermoClient() {
 
   function sendDayMessage(rawText, senderId = peerRef.current?.id) {
     const text = String(rawText || '').trim().slice(0, 300)
-    if (!text || phase !== 'day') return
-    const sender = gameRoster.find(p => p.id === senderId)
+    if (!text || phaseRef.current !== 'day') return
+    const sender = gameRosterRef.current.find(p => p.id === senderId)
     if (!sender?.alive) return
     const message = { id: crypto.randomUUID(), name: sender.name, text, at: Date.now() }
     setDayMessages(current => [...current.slice(-79), message])
     guestConnsRef.current.forEach((conn, peerId) => {
-      const alivePeer = gameRoster.some(p => p.id === peerId && p.alive)
+      const alivePeer = gameRosterRef.current.some(p => p.id === peerId && p.alive)
       if (conn?.open && alivePeer) conn.send({ type: 'day-chat', message })
     })
     setDayText('')
   }
 
   function registerDayVote(voterId, target) {
-    if (!isHost || phase !== 'vote' || !target) return
-    const voter = gameRoster.find(p => p.id === voterId)
+    if (!isHost || phaseRef.current !== 'vote' || !target) return
+    const rosterNow = gameRosterRef.current
+    const voter = rosterNow.find(p => p.id === voterId)
     if (!voter?.alive) return
     setPlayerVotes(current => {
       const next = { ...current, [voterId]: target }
       playerVotesRef.current = next
-      const living = aliveRoster()
+      const living = aliveRoster(rosterNow)
       if (Object.keys(next).length >= living.length) setTimeout(() => resolveDayVote(next), 0)
       return next
     })
@@ -1280,6 +1297,7 @@ export default function PalermoClient() {
 
   function resolveDayVote(votesMap) {
     if (!isHost) return
+    const rosterNow = gameRosterRef.current
     const counts = {}
     Object.values(votesMap).forEach(target => {
       if (target && target !== 'skip') counts[target] = (counts[target] || 0) + 1
@@ -1291,7 +1309,7 @@ export default function PalermoClient() {
 
     const nextScores = { ...voteScores }
     Object.entries(votesMap).forEach(([voterId, target]) => {
-      const targetPlayer = gameRoster.find(p => p.name === target)
+      const targetPlayer = rosterNow.find(p => p.name === target)
       if (targetPlayer && (targetPlayer.roleId === 'visibleKiller' || targetPlayer.roleId === 'hiddenKiller')) {
         nextScores[voterId] = (nextScores[voterId] || 0) + 1
       }
@@ -1299,16 +1317,17 @@ export default function PalermoClient() {
     setVoteScores(nextScores)
 
     if (eliminatedName) {
-      const victim = gameRoster.find(p => p.name === eliminatedName && p.alive)
+      const victim = rosterNow.find(p => p.name === eliminatedName && p.alive)
       if (victim) {
         const roleLabel = roleName({ id: victim.roleId })
         speak(`${victim.name} ${t('eliminated')} ${roleLabel}.`)
         broadcast({ type: 'vote-result', name: victim.name, roleLabel })
-        let nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        let nextRoster = rosterNow.map(p => p.id === victim.id ? { ...p, alive: false } : p)
         const loverChain = applyLoverChain(nextRoster, victim)
         nextRoster = loverChain.roster
         setGameRoster(nextRoster)
-        broadcast({ type: 'game-state', roster: nextRoster })
+        gameRosterRef.current = nextRoster
+        broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'vote' })
         loverChain.chained.forEach(partner => {
@@ -1350,13 +1369,15 @@ export default function PalermoClient() {
     broadcast({ type: 'night-result', target: resolvedTarget, saved })
 
     if (resolvedTarget) {
-      const victim = gameRoster.find(p => p.name === resolvedTarget && p.alive)
+      const rosterNow = gameRosterRef.current
+      const victim = rosterNow.find(p => p.name === resolvedTarget && p.alive)
       if (victim) {
-        let nextRoster = gameRoster.map(p => p.id === victim.id ? { ...p, alive: false } : p)
+        let nextRoster = rosterNow.map(p => p.id === victim.id ? { ...p, alive: false } : p)
         const loverChain = applyLoverChain(nextRoster, victim)
         nextRoster = loverChain.roster
         setGameRoster(nextRoster)
-        broadcast({ type: 'game-state', roster: nextRoster })
+        gameRosterRef.current = nextRoster
+        broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'night' })
         loverChain.chained.forEach(partner => {
@@ -1413,6 +1434,7 @@ export default function PalermoClient() {
     setRound(1)
     setVote('')
     setGameRoster([])
+    gameRosterRef.current = []
     setPlayerVotes({})
     setVoteScores({})
     setIsDead(false)
@@ -1977,7 +1999,13 @@ export default function PalermoClient() {
                 </button>
               </div>
             ) : (
-              <div className="prototypeNotice">{sessionTransitioning ? t('preparingSession') : t('waitingHost')}</div>
+              <div style={{display:'grid',gap:12}}>
+                <div className="prototypeNotice">{sessionTransitioning ? t('preparingSession') : t('waitingHost')}</div>
+                <button className="endChoice danger" onClick={() => leaveToBrowser(false)}>
+                  <strong>{t('leaveGame')}</strong>
+                  <small>{t('leaveGameHint')}</small>
+                </button>
+              </div>
             )}
           </div>
         </section>
