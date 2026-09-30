@@ -565,6 +565,8 @@ export default function PalermoClient() {
   const sessionRejoinTokenRef = useRef('')
   const registryTokenRef = useRef('')
   const menuAudioRef = useRef(null)
+  const uiAudioRef = useRef(null)
+  const lastHoverButtonRef = useRef(null)
   const narratorQueueRef = useRef([])
   const narratorSpeakingRef = useRef(false)
   const playerVotesRef = useRef({})
@@ -957,38 +959,241 @@ export default function PalermoClient() {
     }
   }
 
+  function createAudioContext() {
+    if (typeof window === 'undefined') return null
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return null
+    try { return new AudioCtx() } catch { return null }
+  }
+
+  function ensureUiAudio() {
+    let audio = uiAudioRef.current
+    if (!audio?.ctx || audio.ctx.state === 'closed') {
+      const ctx = createAudioContext()
+      if (!ctx) return null
+      const master = ctx.createGain()
+      master.gain.value = 0.17
+      master.connect(ctx.destination)
+      audio = { ctx, master }
+      uiAudioRef.current = audio
+    }
+    if (audio.ctx.state === 'suspended') audio.ctx.resume?.().catch(() => {})
+    return audio
+  }
+
+  function playUiSound(kind = 'hover') {
+    const audio = ensureUiAudio()
+    if (!audio) return
+    const { ctx, master } = audio
+    const now = ctx.currentTime
+
+    if (kind === 'hover') {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      const filter = ctx.createBiquadFilter()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(520, now)
+      osc.frequency.exponentialRampToValueAtTime(430, now + 0.055)
+      filter.type = 'lowpass'
+      filter.frequency.value = 1900
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(0.055, now + 0.007)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075)
+      osc.connect(filter)
+      filter.connect(gain)
+      gain.connect(master)
+      osc.start(now)
+      osc.stop(now + 0.09)
+      return
+    }
+
+    const body = ctx.createOscillator()
+    const tick = ctx.createOscillator()
+    const bodyGain = ctx.createGain()
+    const tickGain = ctx.createGain()
+    const filter = ctx.createBiquadFilter()
+
+    body.type = 'triangle'
+    body.frequency.setValueAtTime(145, now)
+    body.frequency.exponentialRampToValueAtTime(92, now + 0.085)
+    bodyGain.gain.setValueAtTime(0.0001, now)
+    bodyGain.gain.exponentialRampToValueAtTime(0.12, now + 0.006)
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12)
+
+    tick.type = 'square'
+    tick.frequency.setValueAtTime(820, now)
+    tickGain.gain.setValueAtTime(0.035, now)
+    tickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025)
+
+    filter.type = 'lowpass'
+    filter.frequency.value = 1000
+
+    body.connect(filter)
+    filter.connect(bodyGain)
+    bodyGain.connect(master)
+    tick.connect(tickGain)
+    tickGain.connect(master)
+
+    body.start(now)
+    tick.start(now)
+    body.stop(now + 0.14)
+    tick.stop(now + 0.04)
+  }
+
   function startMenuMusic() {
     if (!menuMusicOn || typeof window === 'undefined' || menuAudioRef.current) return
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext
-      if (!AudioCtx) return
-      const ctx = new AudioCtx()
-      const master = ctx.createGain()
-      master.gain.value = 0.035
-      master.connect(ctx.destination)
+      const ctx = createAudioContext()
+      if (!ctx) return
 
-      const freqs = [55, 82.41, 110]
-      const oscs = freqs.map((freq, i) => {
+      const master = ctx.createGain()
+      const compressor = ctx.createDynamicsCompressor()
+      const lowpass = ctx.createBiquadFilter()
+      master.gain.value = 0.065
+      lowpass.type = 'lowpass'
+      lowpass.frequency.value = 3200
+      lowpass.Q.value = 0.35
+      compressor.threshold.value = -18
+      compressor.knee.value = 18
+      compressor.ratio.value = 3
+      compressor.attack.value = 0.02
+      compressor.release.value = 0.45
+      master.connect(lowpass)
+      lowpass.connect(compressor)
+      compressor.connect(ctx.destination)
+
+      const ambience = ctx.createGain()
+      ambience.gain.value = 0.23
+      ambience.connect(master)
+
+      // A low, smoky room tone under the score.
+      const droneA = ctx.createOscillator()
+      const droneB = ctx.createOscillator()
+      const droneGainA = ctx.createGain()
+      const droneGainB = ctx.createGain()
+      droneA.type = 'sine'
+      droneB.type = 'triangle'
+      droneA.frequency.value = 43.65
+      droneB.frequency.value = 65.41
+      droneGainA.gain.value = 0.17
+      droneGainB.gain.value = 0.045
+      droneA.connect(droneGainA)
+      droneB.connect(droneGainB)
+      droneGainA.connect(ambience)
+      droneGainB.connect(ambience)
+      droneA.start()
+      droneB.start()
+
+      const tremolo = ctx.createOscillator()
+      const tremoloGain = ctx.createGain()
+      tremolo.frequency.value = 0.07
+      tremoloGain.gain.value = 0.018
+      tremolo.connect(tremoloGain)
+      tremoloGain.connect(master.gain)
+      tremolo.start()
+
+      // Very soft filtered noise gives it a vinyl / smoky-room texture.
+      const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate)
+      const noiseData = noiseBuffer.getChannelData(0)
+      for (let i = 0; i < noiseData.length; i += 1) {
+        noiseData[i] = (Math.random() * 2 - 1) * 0.19
+      }
+      const noise = ctx.createBufferSource()
+      const noiseFilter = ctx.createBiquadFilter()
+      const noiseGain = ctx.createGain()
+      noise.buffer = noiseBuffer
+      noise.loop = true
+      noiseFilter.type = 'bandpass'
+      noiseFilter.frequency.value = 1350
+      noiseFilter.Q.value = 0.45
+      noiseGain.gain.value = 0.018
+      noise.connect(noiseFilter)
+      noiseFilter.connect(noiseGain)
+      noiseGain.connect(master)
+      noise.start()
+
+      const activeNodes = new Set()
+      const bpm = 66
+      const beat = 60 / bpm
+      const bar = beat * 4
+      // D minor / noir-jazz colors: Dm, Bb, Gm, A7.
+      const chords = [
+        [73.42, 87.31, 110.00],
+        [58.27, 73.42, 87.31],
+        [49.00, 58.27, 73.42],
+        [55.00, 69.30, 82.41],
+      ]
+      const bass = [36.71, 29.14, 24.50, 27.50]
+      const melody = [
+        [293.66, 261.63, 220.00, 261.63],
+        [233.08, 220.00, 174.61, 220.00],
+        [196.00, 174.61, 146.83, 174.61],
+        [220.00, 207.65, 164.81, 184.99],
+      ]
+
+      function scheduleNote(freq, when, duration, volume, type = 'triangle', cutoff = 1800) {
         const osc = ctx.createOscillator()
         const gain = ctx.createGain()
-        osc.type = i === 0 ? 'sine' : 'triangle'
-        osc.frequency.value = freq
-        gain.gain.value = i === 0 ? 0.75 : 0.28
-        osc.connect(gain)
+        const filter = ctx.createBiquadFilter()
+        osc.type = type
+        osc.frequency.setValueAtTime(freq, when)
+        filter.type = 'lowpass'
+        filter.frequency.setValueAtTime(cutoff, when)
+        filter.frequency.exponentialRampToValueAtTime(Math.max(260, cutoff * 0.52), when + duration)
+        gain.gain.setValueAtTime(0.0001, when)
+        gain.gain.exponentialRampToValueAtTime(volume, when + Math.min(0.025, duration * 0.12))
+        gain.gain.exponentialRampToValueAtTime(0.0001, when + duration)
+        osc.connect(filter)
+        filter.connect(gain)
         gain.connect(master)
-        osc.start()
-        return osc
-      })
+        osc.start(when)
+        osc.stop(when + duration + 0.03)
+        activeNodes.add(osc)
+        osc.onended = () => activeNodes.delete(osc)
+      }
 
-      const lfo = ctx.createOscillator()
-      const lfoGain = ctx.createGain()
-      lfo.frequency.value = 0.08
-      lfoGain.gain.value = 0.015
-      lfo.connect(lfoGain)
-      lfoGain.connect(master.gain)
-      lfo.start()
+      let barIndex = 0
+      let nextBarAt = ctx.currentTime + 0.12
 
-      menuAudioRef.current = { ctx, oscs, lfo }
+      function scheduleBar() {
+        const chordIndex = barIndex % chords.length
+        const when = Math.max(ctx.currentTime + 0.04, nextBarAt)
+
+        // Upright-bass-like low pulse.
+        scheduleNote(bass[chordIndex], when, beat * 0.72, 0.18, 'sine', 520)
+        scheduleNote(bass[chordIndex] * 2, when + beat * 2, beat * 0.5, 0.065, 'triangle', 650)
+
+        // Soft muted-piano chord stabs.
+        chords[chordIndex].forEach((freq, index) => {
+          scheduleNote(freq * 2, when + beat * 0.06 + index * 0.018, beat * 1.6, 0.028, 'triangle', 1500)
+        })
+
+        // Sparse detective-theme melody.
+        melody[chordIndex].forEach((freq, index) => {
+          const offset = [0.72, 1.52, 2.52, 3.2][index] * beat
+          scheduleNote(freq, when + offset, beat * 0.45, index === 0 ? 0.035 : 0.026, 'sine', 2200)
+        })
+
+        barIndex += 1
+        nextBarAt = when + bar
+      }
+
+      scheduleBar()
+      const scheduler = setInterval(() => {
+        if (ctx.state === 'suspended') ctx.resume?.().catch(() => {})
+        while (nextBarAt < ctx.currentTime + bar * 1.3) scheduleBar()
+      }, 350)
+
+      menuAudioRef.current = {
+        ctx,
+        master,
+        droneA,
+        droneB,
+        tremolo,
+        noise,
+        scheduler,
+        activeNodes,
+      }
     } catch {}
   }
 
@@ -996,8 +1201,12 @@ export default function PalermoClient() {
     const audio = menuAudioRef.current
     if (!audio) return
     try {
-      audio.oscs?.forEach(o => o.stop())
-      audio.lfo?.stop()
+      clearInterval(audio.scheduler)
+      audio.activeNodes?.forEach(node => { try { node.stop() } catch {} })
+      audio.droneA?.stop()
+      audio.droneB?.stop()
+      audio.tremolo?.stop()
+      audio.noise?.stop()
       audio.ctx?.close()
     } catch {}
     menuAudioRef.current = null
@@ -1240,9 +1449,52 @@ export default function PalermoClient() {
   }, [isHost, screen, connectionState])
 
   useEffect(() => {
-    if (screen === 'home' && menuMusicOn) startMenuMusic()
-    if (screen !== 'home') stopMenuMusic()
+    const musicScreens = ['home', 'join', 'lobby', 'gameOver']
+    if (musicScreens.includes(screen) && menuMusicOn) startMenuMusic()
+    if (!musicScreens.includes(screen)) stopMenuMusic()
   }, [screen, menuMusicOn])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const soundScreens = ['language', 'home', 'join', 'lobby', 'gameOver']
+    if (!soundScreens.includes(screen)) return
+
+    const root = document.querySelector('.palermoShell')
+    if (!root) return
+
+    const onPointerOver = event => {
+      const button = event.target?.closest?.('button')
+      if (!button || button.disabled || !root.contains(button)) return
+      if (event.relatedTarget && button.contains(event.relatedTarget)) return
+      if (lastHoverButtonRef.current === button) return
+      lastHoverButtonRef.current = button
+      playUiSound('hover')
+    }
+
+    const onPointerOut = event => {
+      const button = event.target?.closest?.('button')
+      if (!button) return
+      if (event.relatedTarget && button.contains(event.relatedTarget)) return
+      if (lastHoverButtonRef.current === button) lastHoverButtonRef.current = null
+    }
+
+    const onClick = event => {
+      const button = event.target?.closest?.('button')
+      if (!button || button.disabled || !root.contains(button)) return
+      playUiSound('click')
+    }
+
+    root.addEventListener('pointerover', onPointerOver)
+    root.addEventListener('pointerout', onPointerOut)
+    root.addEventListener('click', onClick)
+
+    return () => {
+      lastHoverButtonRef.current = null
+      root.removeEventListener('pointerover', onPointerOver)
+      root.removeEventListener('pointerout', onPointerOut)
+      root.removeEventListener('click', onClick)
+    }
+  }, [screen])
 
   useEffect(() => {
     if (screen !== 'role' || !myRole) return
@@ -1342,6 +1594,8 @@ export default function PalermoClient() {
       closeAllVoice()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
       stopMenuMusic()
+      try { uiAudioRef.current?.ctx?.close?.() } catch {}
+      uiAudioRef.current = null
     }
   }, [])
 
