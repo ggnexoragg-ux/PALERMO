@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_ROLES = [
   { id: 'visibleKiller', label: 'Revealed Killer', emoji: '🔪', count: 1, min: 1 },
-  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
+  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 0, min: 0 },
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
@@ -418,6 +418,26 @@ function shuffle(items) {
     ;[copy[i], copy[j]] = [copy[j], copy[i]]
   }
   return copy
+}
+
+function automaticRolesForPlayers(playerCount) {
+  const count = Math.max(0, Number(playerCount) || 0)
+
+  // Small games stay simple; extra special roles unlock as the lobby grows.
+  const wanted = {
+    visibleKiller: count >= 2 ? 1 : 0,
+    hiddenKiller: count >= 6 ? 1 : 0,
+    detective: count >= 3 ? 1 : 0,
+    doctor: count >= 4 ? 1 : 0,
+    lover: count >= 7 ? 2 : 0,
+    madness: count >= 9 ? 1 : 0,
+    kamikaze: count >= 10 ? 1 : 0,
+  }
+
+  return DEFAULT_ROLES.map(role => ({
+    ...role,
+    count: wanted[role.id] ?? 0,
+  }))
 }
 
 export default function PalermoClient() {
@@ -850,6 +870,24 @@ export default function PalermoClient() {
 
   useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
   useEffect(() => { playersRef.current = players }, [players])
+  useEffect(() => {
+    if (!isHost || screen !== 'lobby') return
+    const nextRoles = automaticRolesForPlayers(players.length)
+    const changed = nextRoles.some((role, index) => role.count !== (roles[index]?.count ?? 0))
+    if (!changed) return
+
+    setRoles(nextRoles)
+    setTimeout(() => {
+      broadcast({
+        type: 'room-state',
+        players: playersRef.current,
+        spectators: spectatorsRef.current,
+        maxPlayers,
+        maxSpectators,
+        roles: nextRoles,
+      })
+    }, 0)
+  }, [isHost, screen, players.length])
   useEffect(() => { mutedRef.current = muted }, [muted])
   useEffect(() => { isDeadRef.current = isDead }, [isDead])
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -2489,14 +2527,14 @@ export default function PalermoClient() {
               )}
 
               <div className="roleConfig">
+                <div className="autoRolesNotice">
+                  <span>⚙ {lang === 'el' ? 'ΑΥΤΟΜΑΤΟΙ ΡΟΛΟΙ' : 'AUTO ROLES'}</span>
+                  <small>{lang === 'el' ? `Ρυθμίζονται αυτόματα για ${players.length} παίκτες` : `Balanced automatically for ${players.length} players`}</small>
+                </div>
                 {roles.map(role => (
                   <div className="roleConfigRow" key={role.id}>
                     <span>{role.emoji} {roleName(role)}</span>
-                    <div>
-                      <button disabled={!isHost || role.count <= role.min} onClick={() => changeRole(role.id, -1)}>−</button>
-                      <b>{role.count}</b>
-                      <button disabled={!isHost || role.count >= 4} onClick={() => changeRole(role.id, 1)}>+</button>
-                    </div>
+                    <div className="autoRoleCount"><b>{role.count}</b></div>
                   </div>
                 ))}
               </div>
@@ -2948,7 +2986,7 @@ export default function PalermoClient() {
             <div className="howToSection">
               <h3>{lang === 'el' ? 'ΝΥΧΤΑ' : 'NIGHT'}</h3>
               <ul>
-                <li>{lang === 'el' ? 'Οι δύο δολοφόνοι επιλέγουν ξεχωριστά στόχο μέσα σε 15 δευτερόλεπτα και δεν βλέπουν ποιος είναι ο άλλος δολοφόνος.' : 'Both killers independently choose a target within 15 seconds and do not know the other killer’s identity.'}</li>
+                <li>{lang === 'el' ? 'Στα μεγαλύτερα παιχνίδια, οι δύο δολοφόνοι επιλέγουν ξεχωριστά στόχο μέσα σε 15 δευτερόλεπτα και δεν βλέπουν ποιος είναι ο άλλος δολοφόνος. Στα μικρότερα παιχνίδια μπορεί να υπάρχει μόνο ένας δολοφόνος.' : 'In larger games, both killers independently choose a target within 15 seconds and do not know the other killer’s identity. Smaller games may use only one killer.'}</li>
                 <li>{lang === 'el' ? 'Αν επιλέξουν το ίδιο άτομο, αυτό είναι ο στόχος. Αν επιλέξουν διαφορετικούς, το παιχνίδι επιλέγει τυχαία ανάμεσα στους δύο στόχους.' : 'If both killers choose the same person, that is the target. If they disagree, the game randomly chooses between their two targets.'}</li>
                 <li>{lang === 'el' ? 'Ο Γιατρός προστατεύει έναν ζωντανό παίκτη κάθε νύχτα, ακόμα και τον εαυτό του ή έναν δολοφόνο. Αν προστατέψει το θύμα, κανείς δεν πεθαίνει.' : 'The Doctor protects one living player every night, including themself or a killer. If the protected player is targeted, nobody dies.'}</li>
                 <li>{lang === 'el' ? 'Την πρώτη νύχτα ο Ντετέκτιβ βλέπει ποιος είναι ο Φανερός Δολοφόνος.' : 'On the first night, the Detective privately learns who the Revealed Killer is.'}</li>
