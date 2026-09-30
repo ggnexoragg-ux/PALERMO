@@ -266,3 +266,34 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
   .phaseTransitionFlash span{font-size:58px}
   .resultBanner{top:14%;padding:15px 16px}
 }
+
+/* Step 8: observer / spectator experience */
+.observerModeBanner{margin:0 0 16px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid #44365a;border-radius:14px;background:linear-gradient(135deg,rgba(44,31,61,.92),rgba(15,11,21,.96));box-shadow:0 18px 50px rgba(0,0,0,.24)}
+.observerModeBanner>div{display:flex;align-items:center;gap:12px;min-width:0}
+.observerModeBanner>div>span{font-size:30px;filter:drop-shadow(0 4px 12px rgba(139,92,246,.25))}
+.observerModeBanner>div>div{display:grid;gap:3px;min-width:0}
+.observerModeBanner strong{font-size:13px;letter-spacing:.1em;color:#e9ddfa}
+.observerModeBanner small{font-size:10px;line-height:1.45;color:#9e92ad}
+.observerModeBanner>b{flex:0 0 auto;font-size:9px;letter-spacing:.12em;padding:7px 9px;border-radius:999px;background:#2d233c;color:#cdbbe4;border:1px solid #4e3f64}
+.miniRole.observer{border-color:#433455;background:linear-gradient(145deg,#17111f,#0d0a12)}
+.miniRole.observer strong{color:#d7c6ef}
+.observerRoleBoard{display:grid;gap:10px}
+.observerRoleBoard>p{margin:0;color:#8f849d;font-size:10px;line-height:1.45}
+.observerRoleList{display:grid;gap:7px;max-height:300px;overflow:auto;padding-right:2px}
+.observerRoleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:10px;border:1px solid #2d2538;background:#0e0a13}
+.observerRoleRow span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#cfc6d8}
+.observerRoleRow strong{flex:0 0 auto;font-size:10px;color:#bfa5df;text-align:right}
+.observerRoleRow.dead{opacity:.58}
+.observerRoleRow.dead span{text-decoration:line-through}
+.spectatorChatEmpty{padding:16px 10px;text-align:center;border:1px dashed #31283d;border-radius:10px;color:#766d82;font-size:10px}
+.playerStatusDot.reconnecting+*{opacity:.8}
+@media(max-width:850px){
+  .observerModeBanner{align-items:flex-start}
+  .observerRoleList{max-height:240px}
+}
+@media(max-width:560px){
+  .observerModeBanner{display:grid;padding:13px}
+  .observerModeBanner>b{justify-self:start}
+  .observerRoleRow{align-items:flex-start}
+  .observerRoleRow strong{max-width:46%;white-space:normal}
+}
