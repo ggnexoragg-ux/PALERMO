@@ -468,6 +468,7 @@ export default function PalermoClient() {
   const [maxPlayers, setMaxPlayers] = useState(10)
   const [maxSpectators, setMaxSpectators] = useState(4)
   const [roles, setRoles] = useState(DEFAULT_ROLES)
+  const [roleMode, setRoleMode] = useState('auto')
   const [ready, setReady] = useState(false)
   const [connectionState, setConnectionState] = useState('idle')
   const [connectionError, setConnectionError] = useState('')
@@ -1077,7 +1078,7 @@ export default function PalermoClient() {
   useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => {
-    if (!isHost || screen !== 'lobby') return
+    if (!isHost || screen !== 'lobby' || roleMode !== 'auto') return
     const nextRoles = automaticRolesForPlayers(players.length)
     const changed = nextRoles.some((role, index) => role.count !== (roles[index]?.count ?? 0))
     if (!changed) return
@@ -1091,9 +1092,10 @@ export default function PalermoClient() {
         maxPlayers,
         maxSpectators,
         roles: nextRoles,
+        roleMode: 'auto',
       })
     }, 0)
-  }, [isHost, screen, players.length])
+  }, [isHost, screen, players.length, roleMode])
   useEffect(() => { mutedRef.current = muted }, [muted])
   useEffect(() => { isDeadRef.current = isDead }, [isDead])
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -1591,6 +1593,7 @@ export default function PalermoClient() {
       maxPlayers,
       maxSpectators,
       roles,
+      roleMode,
       ...extra,
     })
   }
@@ -1613,6 +1616,7 @@ export default function PalermoClient() {
       maxPlayers,
       maxSpectators,
       roles,
+      roleMode,
       narratorOn,
       lang,
       screen: screenRef.current,
@@ -1700,6 +1704,7 @@ export default function PalermoClient() {
     setMaxPlayers(snapshot.maxPlayers ?? maxPlayers)
     setMaxSpectators(snapshot.maxSpectators ?? maxSpectators)
     setRoles(snapshot.roles || roles)
+    setRoleMode(snapshot.roleMode === 'custom' ? 'custom' : 'auto')
     setNarratorOn(snapshot.narratorOn !== false)
     setLang(snapshot.lang || lang)
     registryTokenRef.current = snapshot.registryToken || registryTokenRef.current
@@ -1967,6 +1972,10 @@ export default function PalermoClient() {
       roster: publicRoster(nextRoster),
       players: playersRef.current,
       spectators: spectatorsRef.current,
+      maxPlayers,
+      maxSpectators,
+      roles,
+      roleMode,
       isDead: existingRoster ? !existingRoster.alive : false,
       observerRoster: (existingSpectator || (existingRoster && !existingRoster.alive))
         ? observerRoster(nextRoster)
@@ -2390,6 +2399,10 @@ export default function PalermoClient() {
           setVoteLocked(!!data.voteLocked)
           setVote(String(data.voteTarget || ''))
           if (data.matchId) matchIdRef.current = String(data.matchId)
+          setMaxPlayers(data.maxPlayers ?? maxPlayers)
+          setMaxSpectators(data.maxSpectators ?? maxSpectators)
+          if (Array.isArray(data.roles)) setRoles(data.roles)
+          setRoleMode(data.roleMode === 'custom' ? 'custom' : 'auto')
           setGameStartsAt(Number(data.gameStartsAt || 0))
           if (data.screen === 'lobby') {
             setReady(!!(data.players || []).find(p => p.clientKey === clientKeyRef.current)?.ready)
@@ -2417,6 +2430,7 @@ export default function PalermoClient() {
           setMaxPlayers(data.maxPlayers ?? 10)
           setMaxSpectators(data.maxSpectators ?? 4)
           setRoles(data.roles || DEFAULT_ROLES)
+          setRoleMode(data.roleMode === 'custom' ? 'custom' : 'auto')
         }
         if (data.type === 'join-error') {
           setJoinPending(false)
@@ -2756,18 +2770,55 @@ export default function PalermoClient() {
     }
   }
 
+  function resetLobbyReadyForSettings(nextRoles, nextMode = roleMode) {
+    setReady(false)
+    setPlayers(current => {
+      const nextPlayers = current.map(player => ({ ...player, ready: false }))
+      playersRef.current = nextPlayers
+      setTimeout(() => broadcast({
+        type: 'room-state',
+        players: nextPlayers,
+        spectators: spectatorsRef.current,
+        maxPlayers,
+        maxSpectators,
+        roles: nextRoles,
+        roleMode: nextMode,
+      }), 0)
+      return nextPlayers
+    })
+  }
+
+  function changeRoleMode(nextMode) {
+    if (!isHost || !['auto','custom'].includes(nextMode) || nextMode === roleMode) return
+    const nextRoles = nextMode === 'auto' ? automaticRolesForPlayers(playersRef.current.length) : roles
+    setRoleMode(nextMode)
+    setRoles(nextRoles)
+    resetLobbyReadyForSettings(nextRoles, nextMode)
+  }
+
   function changeRole(id, delta) {
-    if (!isHost) return
+    if (!isHost || roleMode !== 'custom') return
+
+    const maximums = {
+      visibleKiller: 1,
+      hiddenKiller: 3,
+      detective: 1,
+      doctor: 1,
+      lover: 2,
+      kamikaze: 1,
+      madness: 1,
+    }
+
     setRoles(current => {
       const next = current.map(role => {
         if (role.id !== id) return role
         if (id === 'lover') {
-          const count = delta > 0 ? 2 : 0
-          return { ...role, count }
+          return { ...role, count: delta > 0 ? 2 : 0 }
         }
-        return { ...role, count: Math.max(role.min, Math.min(4, role.count + delta)) }
+        const max = maximums[id] ?? 1
+        return { ...role, count: Math.max(role.min, Math.min(max, role.count + delta)) }
       })
-      setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers, maxSpectators, roles: next }), 0)
+      resetLobbyReadyForSettings(next, 'custom')
       return next
     })
   }
@@ -2775,18 +2826,23 @@ export default function PalermoClient() {
   function changeMaxPlayers(value) {
     const next = Number(value)
     setMaxPlayers(next)
-    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers: next, maxSpectators, roles }), 0)
+    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers: next, maxSpectators, roles, roleMode }), 0)
   }
 
   function changeMaxSpectators(value) {
     const next = Number(value)
     setMaxSpectators(next)
-    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers, maxSpectators: next, roles }), 0)
+    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers, maxSpectators: next, roles, roleMode }), 0)
   }
 
   function startGame() {
     const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
-    if (!isHost || players.length < 2 || !players.every(p => p.ready) || configuredRoleSlots > players.length) return
+    const killerSlots = roles
+      .filter(role => role.id === 'visibleKiller' || role.id === 'hiddenKiller')
+      .reduce((sum, role) => sum + role.count, 0)
+    const loverSlots = roles.find(role => role.id === 'lover')?.count || 0
+    const setupValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
+    if (!isHost || players.length < 2 || !players.every(p => p.ready) || !setupValid) return
 
     let pool = roles.flatMap(role => Array(role.count).fill(role))
     while (pool.length < players.length) pool.push(citizen)
@@ -3292,6 +3348,7 @@ export default function PalermoClient() {
       maxPlayers,
       maxSpectators,
       roles,
+      roleMode,
       narratorOn,
       lang,
     }
@@ -3318,6 +3375,8 @@ export default function PalermoClient() {
     setIsHost(false)
     setPlayers([])
     setSpectators([])
+    setRoleMode('auto')
+    setRoles(DEFAULT_ROLES)
     setReady(false)
     setMyRole(null)
     setPhase('night')
@@ -3354,6 +3413,7 @@ export default function PalermoClient() {
     setMaxPlayers(settings.maxPlayers ?? maxPlayers)
     setMaxSpectators(settings.maxSpectators ?? maxSpectators)
     setRoles(settings.roles ?? roles)
+    setRoleMode(settings.roleMode === 'custom' ? 'custom' : 'auto')
     setNarratorOn(settings.narratorOn ?? narratorOn)
     setLang(settings.lang ?? lang)
     setPlayers([])
@@ -3430,6 +3490,7 @@ export default function PalermoClient() {
             setMaxPlayers(data.maxPlayers ?? settings.maxPlayers ?? 10)
             setMaxSpectators(data.maxSpectators ?? settings.maxSpectators ?? 4)
             setRoles(data.roles || settings.roles || DEFAULT_ROLES)
+            setRoleMode(data.roleMode === 'custom' ? 'custom' : (settings.roleMode === 'custom' ? 'custom' : 'auto'))
           }
         })
       })
@@ -3501,7 +3562,12 @@ export default function PalermoClient() {
 
   const timerText = `${String(Math.floor(discussion / 60)).padStart(2, '0')}:${String(discussion % 60).padStart(2, '0')}`
   const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
-  const roleConfigValid = configuredRoleSlots <= players.length
+  const killerSlots = roles
+    .filter(role => role.id === 'visibleKiller' || role.id === 'hiddenKiller')
+    .reduce((sum, role) => sum + role.count, 0)
+  const loverSlots = roles.find(role => role.id === 'lover')?.count || 0
+  const citizenSlots = Math.max(0, players.length - configuredRoleSlots)
+  const roleConfigValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
   const allReady = players.length >= 2 && players.every(p => p.ready) && roleConfigValid
   const observerMode = isDead || joinMode === 'spectator'
 
@@ -3680,19 +3746,71 @@ export default function PalermoClient() {
               )}
 
               <div className="roleConfig">
-                <div className="autoRolesNotice">
-                  <span>⚙ {lang === 'el' ? 'ΑΥΤΟΜΑΤΟΙ ΡΟΛΟΙ' : 'AUTO ROLES'}</span>
-                  <small>{lang === 'el' ? `Ρυθμίζονται αυτόματα για ${players.length} παίκτες` : `Balanced automatically for ${players.length} players`}</small>
-                </div>
-                {roles.map(role => (
-                  <div className="roleConfigRow" key={role.id}>
-                    <span>{role.emoji} {roleName(role)}</span>
-                    <div className="autoRoleCount"><b>{role.count}</b></div>
+                <div className="roleModeHeader">
+                  <div>
+                    <span>⚙ {lang === 'el' ? 'ΡΥΘΜΙΣΗ ΡΟΛΩΝ' : 'ROLE SETUP'}</span>
+                    <small>{roleMode === 'auto'
+                      ? (lang === 'el' ? `Ισορροπημένοι αυτόματα για ${players.length} παίκτες` : `Balanced automatically for ${players.length} players`)
+                      : (lang === 'el' ? 'Ο host επιλέγει τους ειδικούς ρόλους' : 'The host chooses the special roles')}</small>
                   </div>
-                ))}
+                  <div className="roleModeSwitch">
+                    <button
+                      className={roleMode === 'auto' ? 'active' : ''}
+                      disabled={!isHost}
+                      onClick={() => changeRoleMode('auto')}
+                    >{lang === 'el' ? 'ΑΥΤΟΜΑΤΟ' : 'AUTO'}</button>
+                    <button
+                      className={roleMode === 'custom' ? 'active' : ''}
+                      disabled={!isHost}
+                      onClick={() => changeRoleMode('custom')}
+                    >{lang === 'el' ? 'ΠΡΟΣΑΡΜΟΣΜΕΝΟ' : 'CUSTOM'}</button>
+                  </div>
+                </div>
+
+                {roles.map(role => {
+                  const max = role.id === 'visibleKiller' ? 1
+                    : role.id === 'hiddenKiller' ? 3
+                    : role.id === 'lover' ? 2
+                    : 1
+                  const minusDisabled = !isHost || roleMode !== 'custom' || role.count <= role.min
+                  const plusDisabled = !isHost || roleMode !== 'custom' || role.count >= max
+                  return (
+                    <div className="roleConfigRow" key={role.id}>
+                      <span>{role.emoji} {roleName(role)}</span>
+                      {roleMode === 'custom' ? (
+                        <div className="customRoleControls">
+                          <button disabled={minusDisabled} onClick={() => changeRole(role.id, -1)}>−</button>
+                          <b>{role.count}</b>
+                          <button disabled={plusDisabled} onClick={() => changeRole(role.id, 1)}>+</button>
+                        </div>
+                      ) : (
+                        <div className="autoRoleCount"><b>{role.count}</b></div>
+                      )}
+                    </div>
+                  )
+                })}
+                <div className="roleConfigRow citizenAutoRow">
+                  <span>👤 {t('citizen')}</span>
+                  <div className="autoRoleCount"><b>{citizenSlots}</b></div>
+                </div>
+                {roleMode === 'custom' && (
+                  <div className="customRoleHint">
+                    {lang === 'el'
+                      ? 'Οι Πολίτες συμπληρώνουν αυτόματα τις κενές θέσεις. Η αλλαγή ρόλων μηδενίζει το Ready όλων.'
+                      : 'Citizens automatically fill unused slots. Changing roles resets everyone’s Ready status.'}
+                  </div>
+                )}
               </div>
 
-              {!roleConfigValid && <div className="prototypeNotice">{lang === 'el' ? 'Έχεις επιλέξει περισσότερους ειδικούς ρόλους από τους διαθέσιμους παίκτες.' : 'You selected more special-role slots than available players.'}</div>}
+              {!roleConfigValid && (
+                <div className="prototypeNotice">
+                  {configuredRoleSlots > players.length
+                    ? (lang === 'el' ? 'Υπάρχουν περισσότεροι ειδικοί ρόλοι από παίκτες.' : 'There are more special-role slots than players.')
+                    : killerSlots < 1
+                    ? (lang === 'el' ? 'Χρειάζεται τουλάχιστον ένας Δολοφόνος.' : 'At least one Killer is required.')
+                    : (lang === 'el' ? 'Οι Ερωτευμένοι πρέπει να είναι ακριβώς δύο ή καθόλου.' : 'Lovers must be exactly two or disabled.')}
+                </div>
+              )}
               <div className="roleTotal">{t('spectators')} <b>{spectators.length}/{maxSpectators}</b></div>
               {spectators.map(s => <div className="playerRow" key={s.id}><span className="avatar">{s.avatarUrl ? <img src={s.avatarUrl} alt="" /> : s.name[0]}</span><strong>{s.name}</strong><small>{t('spectator')}</small></div>)}
             </div>
