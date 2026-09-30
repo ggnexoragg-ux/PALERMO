@@ -1217,7 +1217,7 @@ export default function PalermoClient() {
     sendHostBackupState()
     const timer = setInterval(sendHostBackupState, 750)
     return () => clearInterval(timer)
-  }, [isHost, roomCode, screen, roomName, accessMode, accessCode, maxPlayers, maxSpectators, roles, narratorOn, lang, voteScores, nightResolvedTarget, nightSaved, gameWinner, gameMvp])
+  }, [isHost, roomCode, screen, roomName, accessMode, accessCode, maxPlayers, maxSpectators, roles, roleMode, narratorOn, lang, voteScores, nightResolvedTarget, nightSaved, gameWinner, gameMvp])
 
   useEffect(() => {
     if (isHost || !['lobby','role','game'].includes(screen)) return
