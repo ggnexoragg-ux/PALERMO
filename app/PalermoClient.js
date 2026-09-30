@@ -112,6 +112,8 @@ const TEXT = {
     lostHost: 'Connection to host was lost.',
     connectFail: 'Could not connect to that room code.',
     micDenied: 'Microphone permission was denied or unavailable.',
+    narrator: 'NARRATOR', narratorOn: 'ON', narratorOff: 'OFF', narratorHint: 'Game events are spoken in your selected language.',
+    narrRole: 'Your role is', narrNight: 'Night begins. The city falls asleep.', narrDay: 'Day begins. Discussion is now open.', narrVote: 'Voting has started. Choose carefully.',
     madeBy: 'Made by'
   },
   el: {
@@ -211,6 +213,8 @@ const TEXT = {
     lostHost: 'Η σύνδεση με τον host χάθηκε.',
     connectFail: 'Δεν ήταν δυνατή η σύνδεση σε αυτόν τον κωδικό.',
     micDenied: 'Η άδεια μικροφώνου απορρίφθηκε ή δεν είναι διαθέσιμη.',
+    narrator: 'ΑΦΗΓΗΤΗΣ', narratorOn: 'ΕΝΕΡΓΟΣ', narratorOff: 'ΚΛΕΙΣΤΟΣ', narratorHint: 'Τα γεγονότα του παιχνιδιού ακούγονται στη γλώσσα που επέλεξες.',
+    narrRole: 'Ο ρόλος σου είναι', narrNight: 'Η νύχτα ξεκινά. Η πόλη κοιμάται.', narrDay: 'Η μέρα ξεκινά. Η συζήτηση είναι ανοιχτή.', narrVote: 'Η ψηφοφορία ξεκίνησε. Διάλεξε προσεκτικά.',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -254,6 +258,7 @@ export default function PalermoClient() {
   const [micState, setMicState] = useState('idle')
   const [micError, setMicError] = useState('')
   const [muted, setMuted] = useState(false)
+  const [narratorOn, setNarratorOn] = useState(true)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -262,6 +267,19 @@ export default function PalermoClient() {
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home') }
+
+  function speak(text) {
+    if (!narratorOn || typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = lang === 'el' ? 'el-GR' : 'en-US'
+    const voices = window.speechSynthesis.getVoices?.() || []
+    const preferred = voices.find(v => v.lang?.toLowerCase().startsWith(lang === 'el' ? 'el' : 'en'))
+    if (preferred) utterance.voice = preferred
+    utterance.rate = 0.95
+    utterance.pitch = 1
+    window.speechSynthesis.speak(utterance)
+  }
 
   useEffect(() => {
     const existing = document.querySelector('script[data-peerjs]')
@@ -280,7 +298,19 @@ export default function PalermoClient() {
   }, [phase, discussion])
 
   useEffect(() => {
+    if (screen === 'role' && myRole) speak(`${t('narrRole')} ${roleName(myRole)}.`)
+  }, [screen, myRole, lang, narratorOn])
+
+  useEffect(() => {
+    if (screen !== 'game') return
+    if (phase === 'night') speak(t('narrNight'))
+    if (phase === 'day') speak(t('narrDay'))
+    if (phase === 'vote') speak(t('narrVote'))
+  }, [screen, phase, round, lang, narratorOn])
+
+  useEffect(() => {
     return () => {
+      window.speechSynthesis?.cancel?.()
       peerRef.current?.destroy?.()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
     }
@@ -448,8 +478,16 @@ export default function PalermoClient() {
         if (data.type === 'countdown') setCountdown(data.value)
         if (data.type === 'game-start') {
           setMyRole(data.role)
+          setPhase('night')
+          setRound(1)
           setCountdown(null)
           setScreen('role')
+        }
+        if (data.type === 'phase-change') {
+          setPhase(data.phase || 'night')
+          setRound(data.round || 1)
+          if (data.phase === 'day') setDiscussion(180)
+          if (data.phase !== 'vote') setVote('')
         }
       })
 
@@ -532,6 +570,8 @@ export default function PalermoClient() {
           }
         })
 
+        setPhase('night')
+        setRound(1)
         setCountdown(null)
         setScreen('role')
       }
@@ -560,16 +600,24 @@ export default function PalermoClient() {
   }
 
   function nextPhase() {
+    if (!isHost) return
     if (phase === 'night') {
       setPhase('day')
       setDiscussion(180)
-    } else setPhase('vote')
+      broadcast({ type: 'phase-change', phase: 'day', round })
+    } else {
+      setPhase('vote')
+      broadcast({ type: 'phase-change', phase: 'vote', round })
+    }
   }
 
   function finishVote() {
+    if (!isHost) return
+    const nextRound = round + 1
     setPhase('night')
-    setRound(r => r + 1)
+    setRound(nextRound)
     setVote('')
+    broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
   }
 
   const timerText = `${String(Math.floor(discussion / 60)).padStart(2, '0')}:${String(discussion % 60).padStart(2, '0')}`
@@ -715,6 +763,18 @@ export default function PalermoClient() {
             </div>
           </div>
 
+          <div className="card micCard">
+            <div>
+              <div className="cardTitle"><span>{t('narrator')}</span><b>{narratorOn ? t('narratorOn') : t('narratorOff')}</b></div>
+              <p>{t('narratorHint')}</p>
+            </div>
+            <div className="micActions">
+              <button className={narratorOn ? 'primary' : ''} onClick={() => { window.speechSynthesis?.cancel?.(); setNarratorOn(v => !v) }}>
+                {narratorOn ? t('narratorOn') : t('narratorOff')}
+              </button>
+            </div>
+          </div>
+
           <div className="lobbyFooter">
             <span>{players.length} {players.length === 1 ? t('realPlayer') : t('realPlayersCount')} {t('connected')}</span>
             {isHost
@@ -795,6 +855,11 @@ export default function PalermoClient() {
                 <small>{t('yourRole')}</small>
                 <strong>{myRole?.emoji} {roleName(myRole)}</strong>
                 <span>{t('alive')}</span>
+              </div>
+              <div className="card voiceBox">
+                <div className="cardTitle"><span>{t('narrator')}</span><b>{narratorOn ? t('narratorOn') : t('narratorOff')}</b></div>
+                <button onClick={() => { window.speechSynthesis?.cancel?.(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
+                <p>{t('narratorHint')}</p>
               </div>
               <div className="card voiceBox">
                 <div className="cardTitle"><span>{t('voice')}</span><b>{micState === 'granted' ? (muted ? t('muted') : t('micReady')) : t('off')}</b></div>
