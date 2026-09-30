@@ -104,3 +104,7 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
 @media(max-width:1100px){.gameGrid{grid-template-columns:220px minmax(0,1fr)}.sideStack{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr))}.playerBoard{position:static;max-height:none}}
 @media(max-width:850px){.gameGrid{grid-template-columns:1fr}.playerBoard{order:-1}.sideStack{grid-template-columns:1fr}.playerBoardList{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.playerBoardList{grid-template-columns:1fr}}
+
+.killerTeammatesNotice{margin:14px auto 18px;max-width:420px;padding:14px 16px;border:1px solid #6c3544;border-radius:12px;background:linear-gradient(180deg,#1a0d12,#10090c);display:grid;gap:5px;text-align:center}
+.killerTeammatesNotice small{font-size:9px;letter-spacing:.16em;color:#cf8798;font-weight:900}
+.killerTeammatesNotice strong{font-size:22px;color:#ffd3dd;word-break:break-word}
