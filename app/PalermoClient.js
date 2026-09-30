@@ -44,6 +44,20 @@ async function writeRoomRegistry(room, upsert = false) {
   if (!res.ok) throw new Error('room_registry_failed')
 }
 
+async function retireRoomRegistry(code) {
+  if (!code) return
+  await fetch(`${SUPABASE_URL}/rest/v1/palermo_rooms?room_code=eq.${encodeURIComponent(code)}`, {
+    method: 'PATCH',
+    headers: { ...REGISTRY_HEADERS, Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      heartbeat_at: '1970-01-01T00:00:00.000Z',
+      started: true,
+      player_count: 0,
+      spectator_count: 0,
+    }),
+  })
+}
+
 const TEXT = {
   en: {
     browserGame: 'BROWSER GAME',
@@ -176,6 +190,16 @@ const TEXT = {
     bugSending: 'SENDING...',
     bugThanks: 'Thanks — your report was sent.',
     bugFailed: 'Could not send the report. Please try again.',
+    gameOver: 'GAME OVER',
+    endGame: 'END GAME',
+    whatNext: 'WHAT DO YOU WANT TO DO?',
+    playAgain: 'PLAY AGAIN',
+    playAgainHint: 'Fresh room, same rules, same host.',
+    newSession: 'NEW SESSION',
+    newSessionHint: 'Fresh room, same rules, random host.',
+    leaveGame: 'LEAVE',
+    leaveGameHint: 'Return to the server browser.',
+    preparingSession: 'PREPARING NEW SESSION...',
     madeBy: 'Made by'
   },
   el: {
@@ -309,6 +333,16 @@ const TEXT = {
     bugSending: 'ΑΠΟΣΤΟΛΗ...',
     bugThanks: 'Ευχαριστούμε — η αναφορά στάλθηκε.',
     bugFailed: 'Δεν ήταν δυνατή η αποστολή. Δοκίμασε ξανά.',
+    gameOver: 'ΤΕΛΟΣ ΠΑΙΧΝΙΔΙΟΥ',
+    endGame: 'ΤΕΛΟΣ ΠΑΙΧΝΙΔΙΟΥ',
+    whatNext: 'ΤΙ ΘΕΛΕΙΣ ΝΑ ΚΑΝΕΙΣ;',
+    playAgain: 'ΠΑΙΞΕ ΞΑΝΑ',
+    playAgainHint: 'Νέο δωμάτιο, ίδιοι κανόνες, ίδιος host.',
+    newSession: 'ΝΕΟ SESSION',
+    newSessionHint: 'Νέο δωμάτιο, ίδιοι κανόνες, τυχαίος host.',
+    leaveGame: 'ΕΞΟΔΟΣ',
+    leaveGameHint: 'Επιστροφή στους servers.',
+    preparingSession: 'ΠΡΟΕΤΟΙΜΑΣΙΑ ΝΕΟΥ SESSION...',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -372,12 +406,14 @@ export default function PalermoClient() {
   const [doctorVote, setDoctorVote] = useState('')
   const [doctorProtected, setDoctorProtected] = useState('')
   const [nightSaved, setNightSaved] = useState(false)
+  const [sessionTransitioning, setSessionTransitioning] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
   const guestConnsRef = useRef(new Map())
   const pendingJoinConnsRef = useRef(new Map())
   const streamRef = useRef(null)
+  const sessionRejoinTokenRef = useRef('')
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home') }
@@ -571,6 +607,15 @@ export default function PalermoClient() {
     conn.on('data', data => {
       if (!data || typeof data !== 'object') return
 
+      if (data.type === 'session-rejoin') {
+        if (!sessionRejoinTokenRef.current || data.token !== sessionRejoinTokenRef.current) {
+          conn.send({ type: 'join-error', message: t('joinFail') })
+          return
+        }
+        admitGuest(conn, { name: data.name, mode: data.mode || 'player' })
+        return
+      }
+
       if (data.type === 'join') {
         if (accessMode === 'code' && String(data.accessCode || '') !== accessCode) {
           conn.send({ type: 'join-error', message: t('wrongPassword') })
@@ -735,6 +780,15 @@ export default function PalermoClient() {
         if (data.type === 'night-result') {
           setNightResolvedTarget(data.target || '')
           setNightSaved(!!data.saved)
+        }
+        if (data.type === 'game-over') {
+          setScreen('gameOver')
+        }
+        if (data.type === 'session-transition') {
+          transitionToFreshSession(data)
+        }
+        if (data.type === 'return-browser') {
+          leaveToBrowser(false)
         }
         if (data.type === 'phase-change') {
           setPhase(data.phase || 'night')
@@ -942,6 +996,164 @@ export default function PalermoClient() {
       setPhase('vote')
       broadcast({ type: 'phase-change', phase: 'vote', round })
     }
+  }
+
+  function endGame() {
+    if (!isHost) return
+    setScreen('gameOver')
+    broadcast({ type: 'game-over' })
+  }
+
+  function sessionSettings() {
+    return {
+      roomName,
+      accessMode,
+      accessCode,
+      maxPlayers,
+      maxSpectators,
+      roles,
+      narratorOn,
+      lang,
+    }
+  }
+
+  function leaveToBrowser(notify = true) {
+    const oldCode = roomCode
+    if (notify && isHost) broadcast({ type: 'return-browser' })
+    if (isHost) retireRoomRegistry(oldCode).catch(() => {})
+    hostConnRef.current?.close?.()
+    peerRef.current?.destroy?.()
+    guestConnsRef.current.clear()
+    setRoomCode('')
+    setJoinCode('')
+    setIsHost(false)
+    setPlayers([])
+    setSpectators([])
+    setReady(false)
+    setMyRole(null)
+    setPhase('night')
+    setRound(1)
+    setVote('')
+    setConnectionState('idle')
+    setConnectionError('')
+    setSessionTransitioning(false)
+    setScreen('home')
+  }
+
+  function connectFreshSession(payload, oldPeerId) {
+    const Peer = getPeer()
+    if (!Peer) return
+    const becomingHost = oldPeerId === payload.newHostId
+    const newCode = payload.newCode
+    const settings = payload.settings || {}
+    sessionRejoinTokenRef.current = payload.rejoinToken || ''
+
+    setRoomCode(newCode)
+    setRoomName(settings.roomName ?? roomName)
+    setAccessMode(settings.accessMode ?? accessMode)
+    setAccessCode(settings.accessCode ?? accessCode)
+    setMaxPlayers(settings.maxPlayers ?? maxPlayers)
+    setMaxSpectators(settings.maxSpectators ?? maxSpectators)
+    setRoles(settings.roles ?? roles)
+    setNarratorOn(settings.narratorOn ?? narratorOn)
+    setLang(settings.lang ?? lang)
+    setPlayers([])
+    setSpectators([])
+    setReady(false)
+    setMyRole(null)
+    setPhase('night')
+    setRound(1)
+    setVote('')
+    setConnectionError('')
+    setConnectionState('connecting')
+
+    if (becomingHost) {
+      setIsHost(true)
+      const peer = new Peer(roomPeerId(newCode))
+      peerRef.current = peer
+      peer.on('open', id => {
+        const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
+        setPlayers([hostPlayer])
+        setConnectionState('connected')
+        setSessionTransitioning(false)
+        setScreen('lobby')
+      })
+      peer.on('connection', setupHostConnection)
+      peer.on('error', () => {
+        setConnectionState('error')
+        setConnectionError(t('roomOpenFail'))
+      })
+    } else {
+      setIsHost(false)
+      const peer = new Peer()
+      peerRef.current = peer
+      peer.on('open', () => {
+        const conn = peer.connect(roomPeerId(newCode), { reliable: true })
+        hostConnRef.current = conn
+        conn.on('open', () => {
+          conn.send({
+            type: 'session-rejoin',
+            token: payload.rejoinToken,
+            name: name.trim(),
+            mode: joinMode,
+          })
+        })
+        conn.on('data', data => {
+          if (!data || typeof data !== 'object') return
+          if (data.type === 'join-approved') {
+            setConnectionState('connected')
+            setSessionTransitioning(false)
+            setScreen('lobby')
+          }
+          if (data.type === 'room-state') {
+            setPlayers(data.players || [])
+            setSpectators(data.spectators || [])
+            setMaxPlayers(data.maxPlayers ?? settings.maxPlayers ?? 10)
+            setMaxSpectators(data.maxSpectators ?? settings.maxSpectators ?? 4)
+            setRoles(data.roles || settings.roles || DEFAULT_ROLES)
+          }
+        })
+      })
+    }
+  }
+
+  function transitionToFreshSession(payload) {
+    const oldPeerId = peerRef.current?.id
+    setSessionTransitioning(true)
+    hostConnRef.current?.close?.()
+    peerRef.current?.destroy?.()
+    guestConnsRef.current.clear()
+    setTimeout(() => connectFreshSession(payload, oldPeerId), 450)
+  }
+
+  function startFreshSession(randomHost = false) {
+    if (!isHost || sessionTransitioning) return
+    const oldCode = roomCode
+    const oldHostId = peerRef.current?.id
+    const candidates = players.map(p => p.id).filter(Boolean)
+    const newHostId = randomHost && candidates.length
+      ? candidates[Math.floor(Math.random() * candidates.length)]
+      : oldHostId
+    const payload = {
+      type: 'session-transition',
+      newCode: randomCode(),
+      newHostId,
+      rejoinToken: crypto.randomUUID(),
+      settings: sessionSettings(),
+    }
+
+    setSessionTransitioning(true)
+    retireRoomRegistry(oldCode).catch(() => {})
+
+    // If the new host is another player, send the room password only to them.
+    guestConnsRef.current.forEach((conn, peerId) => {
+      if (!conn?.open) return
+      const safeSettings = { ...payload.settings }
+      if (peerId !== newHostId) safeSettings.accessCode = ''
+      conn.send({ ...payload, settings: safeSettings })
+    })
+
+    transitionToFreshSession(payload)
   }
 
   function finishVote() {
@@ -1304,12 +1516,48 @@ export default function PalermoClient() {
                 <button onClick={() => { window.speechSynthesis?.cancel?.(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
                 <p>{t('narratorHint')}</p>
               </div>
+              {isHost && (
+                <div className="card voiceBox">
+                  <div className="cardTitle"><span>{t('gameOver')}</span><b>HOST</b></div>
+                  <button className="danger" onClick={endGame}>{t('endGame')}</button>
+                </div>
+              )}
               <div className="card voiceBox">
                 <div className="cardTitle"><span>{t('voice')}</span><b>{micState === 'granted' ? (muted ? t('muted') : t('micReady')) : t('off')}</b></div>
                 {micState !== 'granted' ? <button onClick={requestMic}>{t('enableMic')}</button> : <button onClick={toggleMute}>{muted ? t('unmute') : t('mute')}</button>}
                 <p>{t('voiceNext')}</p>
               </div>
             </div>
+          </div>
+        </section>
+      )}
+
+      {screen === 'gameOver' && (
+        <section className="roleRevealWrap">
+          <div className="roleReveal card endGameCard">
+            <div className="palermoEyebrow">PALERMO // SESSION COMPLETE</div>
+            <div className="roleEmoji">🏁</div>
+            <h2>{t('gameOver')}</h2>
+            <p>{t('whatNext')}</p>
+
+            {isHost ? (
+              <div className="endGameChoices">
+                <button className="endChoice primary" disabled={sessionTransitioning} onClick={() => startFreshSession(false)}>
+                  <strong>{t('playAgain')}</strong>
+                  <small>{t('playAgainHint')}</small>
+                </button>
+                <button className="endChoice" disabled={sessionTransitioning} onClick={() => startFreshSession(true)}>
+                  <strong>{t('newSession')}</strong>
+                  <small>{t('newSessionHint')}</small>
+                </button>
+                <button className="endChoice danger" disabled={sessionTransitioning} onClick={() => leaveToBrowser(true)}>
+                  <strong>{t('leaveGame')}</strong>
+                  <small>{t('leaveGameHint')}</small>
+                </button>
+              </div>
+            ) : (
+              <div className="prototypeNotice">{sessionTransitioning ? t('preparingSession') : t('waitingHost')}</div>
+            )}
           </div>
         </section>
       )}
