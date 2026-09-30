@@ -195,7 +195,7 @@ const TEXT = {
     connectFail: 'Could not connect to that room code.',
     micDenied: 'Microphone permission was denied or unavailable.',
     narrator: 'NARRATOR', narratorOn: 'ON', narratorOff: 'OFF', narratorHint: 'Game events are spoken in your selected language.',
-    narrRole: 'Your role is', knownKiller: 'THE REVEALED KILLER IS', narrNight: 'Night falls over Palermo.', narrDay: 'Morning comes to Palermo. Discussion begins.', narrVote: 'Voting has started. Choose carefully.',
+    narrRole: 'Your role is', knownKiller: 'THE REVEALED KILLER IS', narrNight: 'Night falls over Palermo. Close your eyes and keep your role hidden. Night actions begin now.', narrDay: 'Morning has come to Palermo. Open your eyes. You now have two minutes to discuss what happened and decide who you trust.', narrVote: 'Discussion is over. It is time to vote. Choose carefully. Once your vote is locked, it cannot be changed.',
     reportBug: 'REPORT A BUG',
     reportBugTitle: 'REPORT A BUG',
     bugCategory: 'PROBLEM TYPE',
@@ -364,7 +364,7 @@ const TEXT = {
     connectFail: 'Δεν ήταν δυνατή η σύνδεση σε αυτόν τον κωδικό.',
     micDenied: 'Η άδεια μικροφώνου απορρίφθηκε ή δεν είναι διαθέσιμη.',
     narrator: 'ΑΦΗΓΗΤΗΣ', narratorOn: 'ΕΝΕΡΓΟΣ', narratorOff: 'ΚΛΕΙΣΤΟΣ', narratorHint: 'Τα γεγονότα του παιχνιδιού ακούγονται στη γλώσσα που επέλεξες.',
-    narrRole: 'Ο ρόλος σου είναι', knownKiller: 'Ο ΦΑΝΕΡΟΣ ΔΟΛΟΦΟΝΟΣ ΕΙΝΑΙ', narrNight: 'Μια νύχτα πέφτει στο Παλέρμο.', narrDay: 'Η μέρα ξημερώνει στο Παλέρμο. Ώρα για συζήτηση.', narrVote: 'Η ψηφοφορία ξεκίνησε. Διάλεξε προσεκτικά.',
+    narrRole: 'Ο ρόλος σου είναι', knownKiller: 'Ο ΦΑΝΕΡΟΣ ΔΟΛΟΦΟΝΟΣ ΕΙΝΑΙ', narrNight: 'Η νύχτα πέφτει στο Παλέρμο. Κλείστε τα μάτια σας και κρατήστε τον ρόλο σας κρυφό. Οι νυχτερινές ενέργειες ξεκινούν τώρα.', narrDay: 'Η μέρα ξημέρωσε στο Παλέρμο. Ανοίξτε τα μάτια σας. Έχετε δύο λεπτά για να συζητήσετε τι συνέβη και ποιον εμπιστεύεστε.', narrVote: 'Η συζήτηση τελείωσε. Ώρα για ψηφοφορία. Επιλέξτε προσεκτικά. Μόλις κλειδώσετε την ψήφο σας, δεν αλλάζει.',
     reportBug: 'ΑΝΑΦΟΡΑ BUG',
     reportBugTitle: 'ΑΝΑΦΟΡΑ BUG',
     bugCategory: 'ΤΥΠΟΣ ΠΡΟΒΛΗΜΑΤΟΣ',
@@ -547,6 +547,8 @@ export default function PalermoClient() {
   const sessionRejoinTokenRef = useRef('')
   const registryTokenRef = useRef('')
   const menuAudioRef = useRef(null)
+  const narratorQueueRef = useRef([])
+  const narratorSpeakingRef = useRef(false)
   const playerVotesRef = useRef({})
   const killerVotesRef = useRef({})
   const doctorProtectedRef = useRef('')
@@ -872,18 +874,76 @@ export default function PalermoClient() {
     })
   }
 
-  function speak(text) {
-    if (!narratorOn || typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = lang === 'el' ? 'el-GR' : 'en-US'
+  function pickNarratorVoice() {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
     const voices = window.speechSynthesis.getVoices?.() || []
-    const preferred = voices.find(v => v.lang?.toLowerCase().startsWith(lang === 'el' ? 'el' : 'en'))
+    const languagePrefix = lang === 'el' ? 'el' : 'en'
+    const candidates = voices.filter(v => v.lang?.toLowerCase().startsWith(languagePrefix))
+    if (!candidates.length) return null
+
+    const preferredNames = lang === 'el'
+      ? ['Google Ελληνικά', 'Microsoft Stefanos', 'Microsoft Athina']
+      : ['Microsoft Guy', 'Microsoft Ryan', 'Google UK English Male', 'Google US English']
+
+    for (const preferredName of preferredNames) {
+      const match = candidates.find(v => v.name?.toLowerCase().includes(preferredName.toLowerCase()))
+      if (match) return match
+    }
+
+    return candidates.find(v => !/compact|espeak/i.test(v.name || '')) || candidates[0]
+  }
+
+  function runNarratorQueue() {
+    if (!narratorOn || narratorSpeakingRef.current || typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    const item = narratorQueueRef.current.shift()
+    if (!item) return
+
+    narratorSpeakingRef.current = true
+    const utterance = new SpeechSynthesisUtterance(item.text)
+    utterance.lang = lang === 'el' ? 'el-GR' : 'en-US'
+    const preferred = pickNarratorVoice()
     if (preferred) utterance.voice = preferred
-    utterance.rate = 0.95
-    utterance.pitch = 1
+    utterance.rate = item.rate ?? 0.9
+    utterance.pitch = item.pitch ?? 0.92
+    utterance.volume = 1
+
+    utterance.onend = () => {
+      narratorSpeakingRef.current = false
+      setTimeout(runNarratorQueue, item.pauseAfter ?? 220)
+    }
+    utterance.onerror = () => {
+      narratorSpeakingRef.current = false
+      setTimeout(runNarratorQueue, 80)
+    }
+
     window.speechSynthesis.speak(utterance)
   }
+
+  function speak(text, options = {}) {
+    if (!narratorOn || typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return
+
+    if (options.interrupt) {
+      narratorQueueRef.current = []
+      narratorSpeakingRef.current = false
+      window.speechSynthesis.cancel()
+    }
+
+    narratorQueueRef.current.push({
+      text: String(text),
+      rate: options.rate,
+      pitch: options.pitch,
+      pauseAfter: options.pauseAfter,
+    })
+    runNarratorQueue()
+  }
+
+  function stopNarrator() {
+    narratorQueueRef.current = []
+    narratorSpeakingRef.current = false
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel?.()
+  }
+
+
 
   useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
   useEffect(() => { playersRef.current = players }, [players])
@@ -1013,17 +1073,48 @@ export default function PalermoClient() {
   }, [screen, phase, round, isHost])
 
   useEffect(() => {
-    if (screen === 'role' && myRole) speak(`${t('narrRole')} ${roleName(myRole)}.`)
+    if (screen !== 'role' || !myRole) return
+    const roleLabel = roleName(myRole)
+    let extra = ''
+    if ((myRole.id === 'visibleKiller' || myRole.id === 'hiddenKiller') && myRole.killerTeammates?.length) {
+      extra = lang === 'el'
+        ? ` Ο άλλος δολοφόνος είναι ${myRole.killerTeammates.join(', ')}. Συνεργαστείτε χωρίς να αποκαλυφθείτε.`
+        : ` Your fellow killer is ${myRole.killerTeammates.join(', ')}. Work together without revealing yourselves.`
+    } else if (myRole.id === 'detective' && myRole.knownVisibleKiller) {
+      extra = lang === 'el'
+        ? ` Γνωρίζεις ότι ο Φανερός Δολοφόνος είναι ο ${myRole.knownVisibleKiller}. Χρησιμοποίησε αυτή την πληροφορία προσεκτικά.`
+        : ` You know that the Revealed Killer is ${myRole.knownVisibleKiller}. Use that information carefully.`
+    } else if (myRole.id === 'lover' && myRole.loverPartner) {
+      extra = lang === 'el'
+        ? ` Είσαι συνδεδεμένος με τον παίκτη ${myRole.loverPartner}. Αν πεθάνει ένας από εσάς, πεθαίνει και ο άλλος.`
+        : ` You are linked with ${myRole.loverPartner}. If either of you dies, the other dies too.`
+    }
+    speak(`${t('narrRole')} ${roleLabel}.${extra}`, { interrupt: true, rate: 0.88, pitch: 0.9 })
   }, [screen, myRole, lang, narratorOn])
 
   useEffect(() => {
     if (screen !== 'game') return
-    if (phase === 'night') speak(t('narrNight'))
-    if (phase === 'day') {
-      const morning = nightResolvedTarget ? `${nightResolvedTarget} ${t('nightDeath')}` : t('nightSafe')
-      speak(`${t('narrDay')} ${morning}`)
+
+    if (phase === 'night') {
+      speak(t('narrNight'), { interrupt: true, rate: 0.88, pitch: 0.88, pauseAfter: 350 })
     }
-    if (phase === 'vote') speak(t('narrVote'))
+
+    if (phase === 'day') {
+      const morning = nightResolvedTarget
+        ? (lang === 'el'
+            ? `Η νύχτα τελείωσε. Ο παίκτης ${nightResolvedTarget} δεν επέζησε.`
+            : `The night is over. ${nightResolvedTarget} did not survive.`)
+        : (lang === 'el'
+            ? 'Η νύχτα τελείωσε. Κανείς δεν πέθανε.'
+            : 'The night is over. No one died.')
+
+      speak(morning, { interrupt: true, rate: 0.86, pitch: 0.88, pauseAfter: 500 })
+      speak(t('narrDay'), { rate: 0.91, pitch: 0.94 })
+    }
+
+    if (phase === 'vote') {
+      speak(t('narrVote'), { interrupt: true, rate: 0.89, pitch: 0.9 })
+    }
   }, [screen, phase, round, lang, narratorOn])
 
   useEffect(() => {
@@ -1072,7 +1163,7 @@ export default function PalermoClient() {
 
   useEffect(() => {
     return () => {
-      window.speechSynthesis?.cancel?.()
+      stopNarrator()
       peerRef.current?.destroy?.()
       closeAllVoice()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
@@ -1713,9 +1804,12 @@ export default function PalermoClient() {
         }
         if (data.type === 'vote-result') {
           if (data.name && data.roleLabel) {
-            speak(`${data.name} ${t('eliminated')} ${data.roleLabel}.`)
+            speak(lang === 'el'
+              ? `Η ψηφοφορία ολοκληρώθηκε. Ο παίκτης ${data.name} αποκλείστηκε. Ο ρόλος του ήταν ${data.roleLabel}.`
+              : `The votes are in. ${data.name} has been eliminated. Their role was ${data.roleLabel}.`,
+              { interrupt: true, rate: 0.87, pitch: 0.9 })
           } else {
-            speak(t('noElimination'))
+            speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
           }
         }
         if (data.type === 'game-over') {
@@ -2174,7 +2268,10 @@ export default function PalermoClient() {
       const victim = rosterNow.find(p => p.name === eliminatedName && p.alive)
       if (victim) {
         const roleLabel = roleName({ id: victim.roleId })
-        speak(`${victim.name} ${t('eliminated')} ${roleLabel}.`)
+        speak(lang === 'el'
+          ? `Η ψηφοφορία ολοκληρώθηκε. Ο παίκτης ${victim.name} αποκλείστηκε. Ο ρόλος του ήταν ${roleLabel}.`
+          : `The votes are in. ${victim.name} has been eliminated. Their role was ${roleLabel}.`,
+          { interrupt: true, rate: 0.87, pitch: 0.9 })
         broadcast({ type: 'vote-result', name: victim.name, roleLabel })
         let nextRoster = rosterNow.map(p => p.id === victim.id ? { ...p, alive: false } : p)
         const loverChain = applyLoverChain(nextRoster, victim)
@@ -2191,7 +2288,7 @@ export default function PalermoClient() {
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
     } else {
-      speak(t('noElimination'))
+      speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
       broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
 
@@ -2909,7 +3006,7 @@ export default function PalermoClient() {
               </div>
               <div className="card voiceBox">
                 <div className="cardTitle"><span>{t('narrator')}</span><b>{narratorOn ? t('narratorOn') : t('narratorOff')}</b></div>
-                <button onClick={() => { window.speechSynthesis?.cancel?.(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
+                <button onClick={() => { stopNarrator(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
                 <p>{t('narratorHint')}</p>
               </div>
               {(isDead || joinMode === 'spectator') && (
