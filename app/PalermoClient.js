@@ -122,7 +122,7 @@ const TEXT = {
     voiceChat: 'VOICE CHAT',
     micReady: 'MIC READY',
     optional: 'OPTIONAL',
-    voiceExplain: 'The browser can request microphone permission now. Actual multi-user voice is the next layer.',
+    voiceExplain: 'Enable your microphone for live daytime voice with the other living players.',
     enableMicrophone: 'ENABLE MICROPHONE',
     unmute: 'UNMUTE',
     muteMic: 'MUTE MIC',
@@ -154,7 +154,7 @@ const TEXT = {
     off: 'OFF',
     enableMic: 'ENABLE MIC',
     mute: 'MUTE',
-    voiceNext: 'Microphone permission works. Live room audio is the next step.',
+    voiceNext: 'Live voice is enabled during daytime for living players. Night voice stays muted for now.',
     visibleKiller: 'Revealed Killer',
     hiddenKiller: 'Hidden Killer',
     detective: 'Detective',
@@ -291,7 +291,7 @@ const TEXT = {
     voiceChat: 'ΦΩΝΗΤΙΚΗ ΣΥΝΟΜΙΛΙΑ',
     micReady: 'ΜΙΚΡΟΦΩΝΟ ΕΤΟΙΜΟ',
     optional: 'ΠΡΟΑΙΡΕΤΙΚΟ',
-    voiceExplain: 'Ο browser μπορεί να ζητήσει άδεια μικροφώνου τώρα. Η ζωντανή φωνή μεταξύ παικτών είναι το επόμενο βήμα.',
+    voiceExplain: 'Ενεργοποίησε το μικρόφωνο για ζωντανή φωνή την ημέρα με τους άλλους ζωντανούς παίκτες.'
     enableMicrophone: 'ΕΝΕΡΓΟΠΟΙΗΣΗ ΜΙΚΡΟΦΩΝΟΥ',
     unmute: 'ΑΝΟΙΓΜΑ ΜΙΚΡΟΦΩΝΟΥ',
     muteMic: 'ΣΙΓΑΣΗ ΜΙΚΡΟΦΩΝΟΥ',
@@ -485,6 +485,11 @@ export default function PalermoClient() {
   const guestConnsRef = useRef(new Map())
   const pendingJoinConnsRef = useRef(new Map())
   const streamRef = useRef(null)
+  const voiceCallsRef = useRef(new Map())
+  const remoteAudioRef = useRef(new Map())
+  const playersRef = useRef([])
+  const mutedRef = useRef(false)
+  const isDeadRef = useRef(false)
   const sessionRejoinTokenRef = useRef('')
   const registryTokenRef = useRef('')
   const menuAudioRef = useRef(null)
@@ -569,6 +574,9 @@ export default function PalermoClient() {
   }
 
   useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
+  useEffect(() => { playersRef.current = players }, [players])
+  useEffect(() => { mutedRef.current = muted }, [muted])
+  useEffect(() => { isDeadRef.current = isDead }, [isDead])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { spectatorsRef.current = spectators }, [spectators])
   useEffect(() => { screenRef.current = screen }, [screen])
@@ -608,6 +616,13 @@ export default function PalermoClient() {
     }, 1000)
     return () => clearInterval(timer)
   }, [screen, phase, round])
+
+  useEffect(() => {
+    if (micState === 'granted') {
+      ensureVoiceCalls()
+      updateVoiceGate()
+    }
+  }, [micState, players, screen, phase, isDead, muted, gameRoster])
 
   useEffect(() => {
     if (screen === 'home' && menuMusicOn) startMenuMusic()
@@ -715,10 +730,129 @@ export default function PalermoClient() {
     return () => {
       window.speechSynthesis?.cancel?.()
       peerRef.current?.destroy?.()
+      closeAllVoice()
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
       stopMenuMusic()
     }
   }, [])
+
+  function stopRemoteAudio(peerId) {
+    const audio = remoteAudioRef.current.get(peerId)
+    if (audio) {
+      try { audio.pause(); audio.srcObject = null } catch {}
+      remoteAudioRef.current.delete(peerId)
+    }
+  }
+
+  function closeVoiceCall(peerId) {
+    const call = voiceCallsRef.current.get(peerId)
+    if (call) {
+      try { call.close() } catch {}
+      voiceCallsRef.current.delete(peerId)
+    }
+    stopRemoteAudio(peerId)
+  }
+
+  function attachVoiceCall(call) {
+    if (!call?.peer) return
+    const peerId = call.peer
+    const existing = voiceCallsRef.current.get(peerId)
+    if (existing && existing !== call) {
+      try { call.close() } catch {}
+      return
+    }
+    voiceCallsRef.current.set(peerId, call)
+
+    call.on('stream', remoteStream => {
+      let audio = remoteAudioRef.current.get(peerId)
+      if (!audio) {
+        audio = new Audio()
+        audio.autoplay = true
+        audio.playsInline = true
+        remoteAudioRef.current.set(peerId, audio)
+      }
+      audio.srcObject = remoteStream
+      updateVoiceGate()
+    })
+
+    call.on('close', () => {
+      if (voiceCallsRef.current.get(peerId) === call) voiceCallsRef.current.delete(peerId)
+      stopRemoteAudio(peerId)
+    })
+    call.on('error', () => {
+      if (voiceCallsRef.current.get(peerId) === call) voiceCallsRef.current.delete(peerId)
+      stopRemoteAudio(peerId)
+    })
+  }
+
+  function handleIncomingVoiceCall(call) {
+    const allowed = playersRef.current.some(p => p.id === call.peer)
+    if (!allowed) {
+      try { call.close() } catch {}
+      return
+    }
+    if (voiceCallsRef.current.has(call.peer)) {
+      try { call.close() } catch {}
+      return
+    }
+    try {
+      call.answer(streamRef.current || undefined)
+      attachVoiceCall(call)
+    } catch {
+      try { call.close() } catch {}
+    }
+  }
+
+  function ensureVoiceCalls() {
+    const peer = peerRef.current
+    const stream = streamRef.current
+    if (!peer?.id || !stream) return
+
+    playersRef.current.forEach(player => {
+      if (!player?.id || player.id === peer.id) return
+      if (voiceCallsRef.current.has(player.id)) return
+
+      // Only one side initiates each two-way media call, preventing doubled audio.
+      if (String(peer.id).localeCompare(String(player.id)) >= 0) return
+
+      try {
+        const call = peer.call(player.id, stream, { metadata: { kind: 'palermo-voice' } })
+        if (call) attachVoiceCall(call)
+      } catch {}
+    })
+  }
+
+  function updateVoiceGate() {
+    const localId = peerRef.current?.id
+    const roster = gameRosterRef.current
+    const me = roster.find(p => p.id === localId)
+    const dayOpen = screenRef.current === 'game' && phaseRef.current === 'day' && !!me?.alive
+    const transmit = dayOpen && !mutedRef.current && !isDeadRef.current
+
+    streamRef.current?.getAudioTracks?.().forEach(track => {
+      track.enabled = transmit
+    })
+
+    remoteAudioRef.current.forEach((audio, peerId) => {
+      const remoteAlive = roster.some(p => p.id === peerId && p.alive)
+      const shouldHear = dayOpen && remoteAlive
+      try {
+        audio.muted = !shouldHear
+        audio.volume = shouldHear ? 1 : 0
+        if (shouldHear) audio.play().catch(() => {})
+        else audio.pause()
+      } catch {}
+    })
+  }
+
+  function closeAllVoice() {
+    voiceCallsRef.current.forEach(call => { try { call.close() } catch {} })
+    voiceCallsRef.current.clear()
+    remoteAudioRef.current.forEach(audio => {
+      try { audio.pause(); audio.srcObject = null } catch {}
+    })
+    remoteAudioRef.current.clear()
+  }
 
   function getPeer() {
     return window.Peer
@@ -818,6 +952,7 @@ export default function PalermoClient() {
     setReady(false)
     setGameRoster([])
     gameRosterRef.current = []
+    setTimeout(updateVoiceGate, 0)
   }
 
   function abortMatchToLobby(leaverPeerId = '') {
@@ -939,6 +1074,7 @@ export default function PalermoClient() {
     })
 
     conn.on('close', () => {
+      closeVoiceCall(conn.peer)
       const wasActivePlayer = gameRosterRef.current.some(p => p.id === conn.peer)
       const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
 
@@ -982,6 +1118,7 @@ export default function PalermoClient() {
 
     const peer = new Peer(roomPeerId(code))
     peerRef.current = peer
+    peer.on('call', handleIncomingVoiceCall)
 
     peer.on('open', id => {
       const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
@@ -1027,6 +1164,7 @@ export default function PalermoClient() {
 
     const peer = new Peer()
     peerRef.current = peer
+    peer.on('call', handleIncomingVoiceCall)
 
     peer.on('open', () => {
       const conn = peer.connect(roomPeerId(code), { reliable: true })
@@ -1131,6 +1269,7 @@ export default function PalermoClient() {
       })
 
       conn.on('close', () => {
+        closeAllVoice()
         const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
         if (matchRunning) {
           resetMatchStateForLobby()
@@ -1274,9 +1413,16 @@ export default function PalermoClient() {
     setMicError('')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      closeAllVoice()
+      streamRef.current?.getTracks?.().forEach(track => track.stop())
       streamRef.current = stream
+      mutedRef.current = false
       setMicState('granted')
       setMuted(false)
+      setTimeout(() => {
+        ensureVoiceCalls()
+        updateVoiceGate()
+      }, 0)
     } catch {
       setMicState('denied')
       setMicError(t('micDenied'))
@@ -1317,8 +1463,9 @@ export default function PalermoClient() {
     const stream = streamRef.current
     if (!stream) return
     const next = !muted
-    stream.getAudioTracks().forEach(track => { track.enabled = !next })
+    mutedRef.current = next
     setMuted(next)
+    updateVoiceGate()
   }
 
   function submitKillerVote(target) {
@@ -1614,6 +1761,7 @@ export default function PalermoClient() {
     const oldCode = roomCode
     if (notify && isHost) broadcast({ type: 'return-browser' })
     if (isHost) retireRoomRegistry(oldCode, registryTokenRef.current).catch(() => {})
+    closeAllVoice()
     hostConnRef.current?.close?.()
     peerRef.current?.destroy?.()
     guestConnsRef.current.clear()
@@ -1674,6 +1822,7 @@ export default function PalermoClient() {
       setIsHost(true)
       const peer = new Peer(roomPeerId(newCode))
       peerRef.current = peer
+      peer.on('call', handleIncomingVoiceCall)
       peer.on('open', id => {
         const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
         writeRoomRegistry({
@@ -1703,6 +1852,7 @@ export default function PalermoClient() {
       setIsHost(false)
       const peer = new Peer()
       peerRef.current = peer
+      peer.on('call', handleIncomingVoiceCall)
       peer.on('open', () => {
         const conn = peer.connect(roomPeerId(newCode), { reliable: true })
         hostConnRef.current = conn
@@ -1736,6 +1886,7 @@ export default function PalermoClient() {
   function transitionToFreshSession(payload) {
     const oldPeerId = peerRef.current?.id
     setSessionTransitioning(true)
+    closeAllVoice()
     hostConnRef.current?.close?.()
     peerRef.current?.destroy?.()
     guestConnsRef.current.clear()
