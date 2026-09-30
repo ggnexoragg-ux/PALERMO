@@ -3624,12 +3624,21 @@ export default function PalermoClient() {
         <div className="noirRain" />
         <div className="noirBlinds" />
         <div className="noirLampGlow" />
+        <div className="mafiaVelvetGlow velvetLeft" />
+        <div className="mafiaVelvetGlow velvetRight" />
+        <div className="mafiaSmoke smokeLeft" />
+        <div className="mafiaSmoke smokeRight" />
       </div>
+      <div className="cinemaGrain" aria-hidden="true" />
+      <div className="cinemaScratch scratchOne" aria-hidden="true" />
+      <div className="cinemaScratch scratchTwo" aria-hidden="true" />
+      <div className="cinemaBar cinemaBarTop" aria-hidden="true" />
+      <div className="cinemaBar cinemaBarBottom" aria-hidden="true" />
       <div className="palermoNoise" />
       <header className="palermoTop">
         <div className="palermoBrand">
           <span className="brandSeal">P</span>
-          <span className="brandCopy"><b>PALERMO</b><small>CASE FILE // ONLINE</small></span>
+          <span className="brandCopy"><b>PALERMO</b><small>{lang === 'el' ? 'Η ΝΥΧΤΑ ΕΧΕΙ ΚΑΝΟΝΕΣ' : 'THE NIGHT HAS RULES'}</small></span>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {screen !== 'language' && <button onClick={() => setScreen('language')} style={{padding:'8px 10px'}}>{lang === 'el' ? 'ΕΛ' : 'EN'}</button>}
@@ -3660,21 +3669,23 @@ export default function PalermoClient() {
 
       {screen === 'home' && (
         <section className="palermoHero">
-          <div className="caseKicker">
-            <span>CASE // 001</span>
-            <i>{lang === 'el' ? 'ΑΝΟΙΧΤΗ ΥΠΟΘΕΣΗ' : 'OPEN INVESTIGATION'}</i>
+          <div className="caseKicker mafiaKicker">
+            <span>PALERMO // AFTER DARK</span>
+            <i>{lang === 'el' ? 'ΙΔΙΩΤΙΚΗ ΣΥΝΑΝΤΗΣΗ' : 'PRIVATE MEETING'}</i>
           </div>
           <div className="palermoEyebrow">{t('social')}</div>
           <h1>PALERMO<br/><span>ONLINE.</span></h1>
           <p>{t('intro')}</p>
-          <div className="noirTagline">
+          <div className="noirTagline mafiaTagline">
             <span>◆</span>
-            <b>{lang === 'el' ? 'Κανείς δεν είναι αθώος μέχρι να τελειώσει η νύχτα.' : 'No one is innocent until the night is over.'}</b>
+            <b>{lang === 'el'
+              ? 'Η εμπιστοσύνη κοστίζει. Η προδοσία κοστίζει περισσότερο.'
+              : 'Trust is expensive. Betrayal costs more.'}</b>
           </div>
 
           <div className="palermoEntry card dossierCard">
-            <div className="caseFileTab">{lang === 'el' ? 'ΝΕΑ ΥΠΟΘΕΣΗ' : 'NEW CASE'}</div>
-            <div className="caseStamp">{lang === 'el' ? 'ΕΜΠΙΣΤΕΥΤΙΚΟ' : 'CONFIDENTIAL'}</div>
+            <div className="caseFileTab mafiaFileTab">{lang === 'el' ? 'ΤΟ ΤΡΑΠΕΖΙ' : 'THE TABLE'}</div>
+            <div className="caseStamp mafiaStamp">{lang === 'el' ? 'ΜΟΝΟ ΜΕ ΠΡΟΣΚΛΗΣΗ' : 'BY INVITATION'}</div>
             <label>{t('displayName')}</label>
             <input value={name} onChange={e => setName(e.target.value)} maxLength={18} placeholder="e.g. Soul" disabled={!!profile} />
             <label style={{marginTop:12}}>{t('roomName')}</label>
@@ -3704,7 +3715,7 @@ export default function PalermoClient() {
         <section className="palermoPanelWrap">
           <button className="backBtn" onClick={() => setScreen('home')}>← {t('back')}</button>
           <div className="card joinCard dossierCard">
-            <div className="caseFileTab">{lang === 'el' ? 'ΑΡΧΕΙΟ ΔΩΜΑΤΙΟΥ' : 'ROOM ARCHIVE'}</div>
+            <div className="caseFileTab mafiaFileTab">{lang === 'el' ? 'ΙΔΙΩΤΙΚΟ ΔΩΜΑΤΙΟ' : 'PRIVATE ROOM'}</div>
             <div className="palermoEyebrow">{t('joinPrivate')}</div>
             <h2>{t('enterCode')}</h2>
             <div className="cardTitle" style={{marginBottom:10}}><span>{t('publicRooms')}</span><button onClick={async () => { setRoomsLoading(true); try { setPublicRooms(await fetchPublicRooms()) } finally { setRoomsLoading(false) } }}>{t('refreshRooms')}</button></div>
@@ -3737,9 +3748,9 @@ export default function PalermoClient() {
 
       {screen === 'lobby' && (
         <section className="lobbyWrap">
-          <div className="caseMetaBar">
-            <span>{lang === 'el' ? 'ΥΠΟΘΕΣΗ' : 'CASE'} #{roomCode}</span>
-            <b>{lang === 'el' ? 'ΚΑΤΑΣΤΑΣΗ: ΕΝΕΡΓΗ' : 'STATUS: ACTIVE'}</b>
+          <div className="caseMetaBar mafiaMetaBar">
+            <span>{lang === 'el' ? 'ΙΔΙΩΤΙΚΟ ΤΡΑΠΕΖΙ' : 'PRIVATE TABLE'} // {roomCode}</span>
+            <b>{lang === 'el' ? 'Η ΟΙΚΟΓΕΝΕΙΑ ΜΑΖΕΥΕΤΑΙ' : 'THE FAMILY IS GATHERING'}</b>
           </div>
           <div className="lobbyHead">
             <div>
@@ -3914,7 +3925,7 @@ export default function PalermoClient() {
       {screen === 'role' && myRole && (
         <section className="roleRevealWrap">
           <div className={`roleReveal card roleRevealAnimated role-${myRole.id}`}>
-            <div className="classifiedStrip">{lang === 'el' ? 'ΑΠΟΡΡΗΤΟ // ΜΟΝΟ ΓΙΑ ΤΑ ΜΑΤΙΑ ΣΟΥ' : 'CLASSIFIED // EYES ONLY'}</div>
+            <div className="classifiedStrip mafiaOrders">{lang === 'el' ? 'ΙΔΙΩΤΙΚΕΣ ΕΝΤΟΛΕΣ // ΚΡΑΤΗΣΕ ΤΟ ΜΥΣΤΙΚΟ' : 'PRIVATE ORDERS // KEEP IT QUIET'}</div>
             <div className="palermoEyebrow">{t('privateScreen')}</div>
             <div className="roleEmoji">{myRole.emoji}</div>
             <small>{t('yourRole')}</small>
@@ -3962,9 +3973,9 @@ export default function PalermoClient() {
               {resultBanner.detail && <span>{resultBanner.detail}</span>}
             </div>
           )}
-          <div className="caseMetaBar gameCaseMeta">
-            <span>{lang === 'el' ? 'ΦΑΚΕΛΟΣ' : 'CASE FILE'} // {roomCode}</span>
-            <b>{lang === 'el' ? `ΓΥΡΟΣ ${round}` : `ROUND ${round}`}</b>
+          <div className="caseMetaBar gameCaseMeta mafiaMetaBar">
+            <span>{lang === 'el' ? 'Η ΣΥΝΑΝΤΗΣΗ' : 'THE SIT-DOWN'} // {roomCode}</span>
+            <b>{lang === 'el' ? `ΝΥΧΤΑ ${round}` : `NIGHT ${round}`}</b>
           </div>
           <div className="gameTop">
             <div><small>{t('room')} {roomCode}</small><h2>{t('round')} {round}</h2></div>
@@ -4021,12 +4032,12 @@ export default function PalermoClient() {
             </aside>
 
             <div key={`${phase}-${round}`} className={`card phaseCard phaseCardAnimated ${phase} interrogationPanel`}>
-              <div className="phaseCaseLabel">
+              <div className="phaseCaseLabel mafiaPhaseLabel">
                 {phase === 'night'
-                  ? (lang === 'el' ? 'ΝΥΧΤΕΡΙΝΗ ΑΝΑΦΟΡΑ' : 'NIGHT REPORT')
+                  ? (lang === 'el' ? 'Η ΔΟΥΛΕΙΑ ΤΗΣ ΝΥΧΤΑΣ' : 'THE NIGHT BUSINESS')
                   : phase === 'day'
-                  ? (lang === 'el' ? 'ΑΝΑΚΡΙΣΗ' : 'INTERROGATION')
-                  : (lang === 'el' ? 'ΕΤΥΜΗΓΟΡΙΑ' : 'VERDICT')}
+                  ? (lang === 'el' ? 'ΤΟ ΣΥΜΒΟΥΛΙΟ' : 'THE SIT-DOWN')
+                  : (lang === 'el' ? 'Η ΑΠΟΦΑΣΗ' : 'THE VERDICT')}
               </div>
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
@@ -4238,7 +4249,7 @@ export default function PalermoClient() {
       {screen === 'gameOver' && (
         <section className="roleRevealWrap">
           <div className="roleReveal card endGameCard gameOverAnimated closedCaseFile">
-            <div className="caseClosedStamp">{lang === 'el' ? 'ΥΠΟΘΕΣΗ ΕΚΛΕΙΣΕ' : 'CASE CLOSED'}</div>
+            <div className="caseClosedStamp mafiaClosedStamp">{lang === 'el' ? 'Η ΔΟΥΛΕΙΑ ΤΕΛΕΙΩΣΕ' : 'BUSINESS CONCLUDED'}</div>
             <div className="palermoEyebrow">PALERMO // SESSION COMPLETE</div>
             <div className="roleEmoji">🏁</div>
             <h2>{gameWinner === 'madness' ? t('madnessWins') : gameWinner === 'killers' ? t('killersWin') : gameWinner === 'citizens' ? t('citizensWin') : t('gameOver')}</h2>
