@@ -587,6 +587,7 @@ export default function PalermoClient() {
   const hostMigrationTimerRef = useRef(null)
   const setupHostConnectionRef = useRef(null)
   const matchIdRef = useRef('')
+  const reconnectGenerationRef = useRef(0)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -1715,6 +1716,27 @@ export default function PalermoClient() {
     setGameStartsAt(Number(snapshot.gameStartsAt || 0))
     gameStartsAtRef.current = Number(snapshot.gameStartsAt || 0)
     setIsDead(!!nextRoster.find(p => p.clientKey === selfKey && !p.alive))
+
+    if (oldHostKey && oldHostKey !== selfKey) {
+      const oldTimer = reconnectGraceTimersRef.current.get(oldHostKey)
+      if (oldTimer) clearTimeout(oldTimer)
+      const timer = setTimeout(() => {
+        reconnectGraceTimersRef.current.delete(oldHostKey)
+        const awayPlayer = playersRef.current.find(p => p.clientKey === oldHostKey && p.connected === false)
+        if (!awayPlayer) return
+
+        if (screenRef.current === 'role' || screenRef.current === 'game') {
+          abortMatchToLobby(awayPlayer.id)
+          return
+        }
+
+        const next = playersRef.current.filter(p => p.clientKey !== oldHostKey)
+        playersRef.current = next
+        setPlayers(next)
+        broadcastState(next, spectatorsRef.current)
+      }, 20000)
+      reconnectGraceTimersRef.current.set(oldHostKey, timer)
+    }
   }
 
   function promoteToHost(code, snapshot) {
@@ -1745,6 +1767,7 @@ export default function PalermoClient() {
         isHostRef.current = true
         setRoomCode(code)
         reconnectRoomRef.current = code
+        saveReconnectSession(code)
         guestConnsRef.current.clear()
         restoreMigratedAuthority(snapshot, id)
         peer.on('connection', conn => setupHostConnectionRef.current?.(conn))
@@ -2180,9 +2203,13 @@ export default function PalermoClient() {
         )
         gameRosterRef.current = nextRoster
         setGameRoster(nextRoster)
-        setPlayers(current => current.map(p =>
-          p.id === conn.peer ? { ...p, connected: false } : p
-        ))
+        setPlayers(current => {
+          const next = current.map(p =>
+            p.id === conn.peer ? { ...p, connected: false } : p
+          )
+          playersRef.current = next
+          return next
+        })
         broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
 
         const previousTimer = reconnectGraceTimersRef.current.get(reconnectKey)
@@ -2246,6 +2273,8 @@ export default function PalermoClient() {
       }, registryTokenRef.current, false).catch(() => {})
       setPlayers([hostPlayer])
       playersRef.current = [hostPlayer]
+      reconnectRoomRef.current = code
+      saveReconnectSession(code)
       setSpectators([])
       setIsHost(true)
       isHostRef.current = true
@@ -2291,9 +2320,18 @@ export default function PalermoClient() {
           setJoinPending(false)
           setConnectionState('connected')
           setConnectionError('')
-          if (Array.isArray(data.players)) setPlayers(data.players)
-          if (Array.isArray(data.spectators)) setSpectators(data.spectators)
-          if (Array.isArray(data.roster)) setGameRoster(data.roster)
+          if (Array.isArray(data.players)) {
+            playersRef.current = data.players
+            setPlayers(data.players)
+          }
+          if (Array.isArray(data.spectators)) {
+            spectatorsRef.current = data.spectators
+            setSpectators(data.spectators)
+          }
+          if (Array.isArray(data.roster)) {
+            gameRosterRef.current = data.roster
+            setGameRoster(data.roster)
+          }
           setMyRole(data.role || null)
           setIsDead(!!data.isDead)
           setDayMessages(Array.isArray(data.dayMessages) ? data.dayMessages : [])
@@ -2446,61 +2484,116 @@ export default function PalermoClient() {
     }
 
     reconnectingRef.current = true
-    reconnectRoomRef.current = String(code).toUpperCase()
+    const generation = reconnectGenerationRef.current + 1
+    reconnectGenerationRef.current = generation
+    const normalizedCode = String(code).toUpperCase()
+    const deadline = Date.now() + 20000
+
+    reconnectRoomRef.current = normalizedCode
     setConnectionState('connecting')
     setConnectionError(lang === 'el' ? 'Επανασύνδεση...' : 'Reconnecting...')
 
-    try { hostConnRef.current?.close?.() } catch {}
-    try { peerRef.current?.destroy?.() } catch {}
-
-    const peer = makePeer()
-    peerRef.current = peer
-    let finished = false
-
-    const fail = () => {
-      if (finished) return
-      finished = true
+    const isCurrent = () => reconnectGenerationRef.current === generation
+    const finishFailure = () => {
+      if (!isCurrent()) return
       reconnectingRef.current = false
+      reconnectGenerationRef.current += 1
       clearReconnectSession()
       setConnectionState('error')
       setConnectionError(t('lostHost'))
       setRoomCode('')
       setPlayers([])
+      playersRef.current = []
       setSpectators([])
+      spectatorsRef.current = []
       setIsHost(false)
+      isHostRef.current = false
       setScreen('home')
       screenRef.current = 'home'
     }
 
-    const timeout = setTimeout(fail, 8000)
+    const retry = () => {
+      if (!isCurrent()) return
+      if (Date.now() >= deadline) {
+        finishFailure()
+        return
+      }
+      setTimeout(connectOnce, 650)
+    }
 
-    peer.on('open', () => {
-      const conn = peer.connect(roomPeerId(code), { reliable: true })
-      hostConnRef.current = conn
+    const connectOnce = () => {
+      if (!isCurrent()) return
+      if (Date.now() >= deadline) {
+        finishFailure()
+        return
+      }
 
-      conn.on('open', () => {
-        conn.send({
-          type: 'reconnect',
-          clientKey: clientKeyRef.current,
-          name: name.trim(),
-          avatarUrl,
+      try { hostConnRef.current?.close?.() } catch {}
+      try { peerRef.current?.destroy?.() } catch {}
+      hostConnRef.current = null
+
+      const peer = makePeer()
+      if (!peer) {
+        retry()
+        return
+      }
+      peerRef.current = peer
+      let attemptSettled = false
+      let attemptTimer = null
+
+      const failAttempt = () => {
+        if (attemptSettled || !isCurrent()) return
+        attemptSettled = true
+        clearTimeout(attemptTimer)
+        try { peer.destroy?.() } catch {}
+        retry()
+      }
+
+      attemptTimer = setTimeout(failAttempt, 2800)
+
+      peer.on('open', () => {
+        if (!isCurrent() || attemptSettled) return
+        const conn = peer.connect(roomPeerId(normalizedCode), { reliable: true })
+        hostConnRef.current = conn
+
+        conn.on('open', () => {
+          if (!isCurrent() || attemptSettled) return
+          conn.send({
+            type: 'reconnect',
+            clientKey: clientKeyRef.current,
+            name: name.trim(),
+            avatarUrl,
+          })
         })
+
+        conn.on('data', data => {
+          if (!isCurrent()) return
+          if (data?.type === 'reconnect-approved') {
+            attemptSettled = true
+            clearTimeout(attemptTimer)
+            reconnectingRef.current = false
+            reconnectGenerationRef.current += 1
+            setConnectionState('connected')
+            setConnectionError('')
+          }
+          if (data?.type === 'join-error') {
+            failAttempt()
+            return
+          }
+          handleGuestData(data)
+        })
+
+        conn.on('close', () => {
+          if (reconnectingRef.current) failAttempt()
+          else if (['lobby','role','game'].includes(screenRef.current)) handleHostLoss(normalizedCode)
+        })
+        conn.on('error', failAttempt)
       })
 
-      conn.on('data', data => {
-        if (data?.type === 'reconnect-approved') {
-          finished = true
-          clearTimeout(timeout)
-        }
-        handleGuestData(data)
-      })
+      peer.on('error', failAttempt)
+    }
 
-      conn.on('close', () => {
-        if (!finished) fail()
-      })
-      conn.on('error', fail)
-    })
-    peer.on('error', fail)
+    connectOnce()
   }
 
   function joinRoom() {
@@ -3011,7 +3104,7 @@ export default function PalermoClient() {
       broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
 
-    const nextRound = round + 1
+    const nextRound = roundRef.current + 1
     setPlayerVotes({})
     playerVotesRef.current = {}
     setVote('')
@@ -3064,7 +3157,7 @@ export default function PalermoClient() {
       }
     }
 
-    hostSchedulePhase('day', round, 120)
+    hostSchedulePhase('day', roundRef.current, 120)
   }
 
   function nextPhase() {
@@ -3072,7 +3165,7 @@ export default function PalermoClient() {
     if (phaseRef.current === 'night') {
       resolveKillerVotes()
     } else {
-      hostSchedulePhase('vote', round, 30)
+      hostSchedulePhase('vote', roundRef.current, 30)
     }
   }
 
@@ -3091,6 +3184,7 @@ export default function PalermoClient() {
 
   function leaveToBrowser(notify = true) {
     const oldCode = roomCode
+    reconnectGenerationRef.current += 1
     clearReconnectSession()
     hostBackupRef.current = null
     hostMigrationRef.current = false
@@ -3176,6 +3270,9 @@ export default function PalermoClient() {
           started: false,
         }, registryTokenRef.current, false).catch(() => {})
         setPlayers([hostPlayer])
+        playersRef.current = [hostPlayer]
+        reconnectRoomRef.current = newCode
+        saveReconnectSession(newCode)
         setConnectionState('connected')
         setSessionTransitioning(false)
         setScreen('lobby')
@@ -3583,9 +3680,13 @@ export default function PalermoClient() {
                     </span>
                     <div className="playerBoardMeta">
                       <strong>{player.name}</strong>
-                      <small>{player.alive ? (lang === 'el' ? 'ΖΩΝΤΑΝΟΣ' : 'ALIVE') : (lang === 'el' ? 'ΝΕΚΡΟΣ' : 'DEAD')}</small>
+                      <small>{player.connected === false
+  ? (lang === 'el' ? 'ΕΠΑΝΑΣΥΝΔΕΣΗ...' : 'RECONNECTING...')
+  : player.alive
+  ? (lang === 'el' ? 'ΖΩΝΤΑΝΟΣ' : 'ALIVE')
+  : (lang === 'el' ? 'ΝΕΚΡΟΣ' : 'DEAD')}</small>
                     </div>
-                    <span className={`playerStatusDot ${player.alive ? 'alive' : 'dead'}`} />
+                    <span className={`playerStatusDot ${player.connected === false ? 'reconnecting' : player.alive ? 'alive' : 'dead'}`} />
                   </div>
                 ))}
               </div>
