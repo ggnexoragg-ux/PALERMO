@@ -297,3 +297,27 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
   .observerRoleRow{align-items:flex-start}
   .observerRoleRow strong{max-width:46%;white-space:normal}
 }
+
+/* Step 9: auto/custom role setup */
+.roleModeHeader{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:4px 0 10px;padding:12px;border:1px solid #3b3150;border-radius:12px;background:#100c17}
+.roleModeHeader>div:first-child{display:grid;gap:3px;min-width:0}
+.roleModeHeader>div:first-child>span{font-size:10px;font-weight:900;letter-spacing:.1em;color:#c8b5ef}
+.roleModeHeader>div:first-child>small{font-size:10px;line-height:1.4;color:#8f84a0}
+.roleModeSwitch{display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:0 0 auto}
+.roleModeSwitch button{padding:7px 10px!important;min-width:72px;font-size:9px!important;font-weight:900;letter-spacing:.08em}
+.roleModeSwitch button.active{background:#39275f!important;border-color:#8356ff!important;color:#efe6ff!important;box-shadow:0 0 18px rgba(131,86,255,.14)}
+.roleModeSwitch button:disabled{opacity:.6}
+.customRoleControls{display:grid!important;grid-template-columns:30px 34px 30px;gap:6px!important;align-items:center}
+.customRoleControls button{width:30px;height:30px;padding:0!important;display:grid;place-items:center;font-size:17px;line-height:1;border-radius:8px}
+.customRoleControls b{display:grid;place-items:center;height:30px;border:1px solid #3b3150;border-radius:8px;background:#171221;color:#d9c8f2;font-size:12px}
+.customRoleControls button:disabled{opacity:.28;cursor:not-allowed}
+.citizenAutoRow{margin-top:3px;padding-top:11px;border-top:1px solid #332942;border-bottom:0}
+.citizenAutoRow>span{color:#b9adca}
+.customRoleHint{margin-top:5px;padding:10px 11px;border:1px dashed #3c3150;border-radius:10px;color:#8f849f;font-size:10px;line-height:1.45}
+@media(max-width:560px){
+  .roleModeHeader{align-items:stretch;flex-direction:column}
+  .roleModeSwitch{width:100%}
+  .roleModeSwitch button{min-height:40px}
+  .roleConfigRow{gap:10px}
+  .roleConfigRow>span{font-size:12px}
+}
