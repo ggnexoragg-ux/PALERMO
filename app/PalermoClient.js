@@ -549,6 +549,9 @@ export default function PalermoClient() {
   const [matchHistoryError, setMatchHistoryError] = useState('')
   const [resultBanner, setResultBanner] = useState(null)
   const [spectatorRoleRoster, setSpectatorRoleRoster] = useState([])
+  const [daySkipCount, setDaySkipCount] = useState(0)
+  const [daySkipRequired, setDaySkipRequired] = useState(0)
+  const [daySkipLocked, setDaySkipLocked] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -600,6 +603,7 @@ export default function PalermoClient() {
   const setupHostConnectionRef = useRef(null)
   const matchIdRef = useRef('')
   const reconnectGenerationRef = useRef(0)
+  const daySkipVotesRef = useRef({})
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -629,6 +633,13 @@ export default function PalermoClient() {
     setVote('')
     setVoteLocked(false)
 
+    if (nextPhase === 'day') {
+      daySkipVotesRef.current = {}
+      setDaySkipCount(0)
+      setDaySkipRequired(gameRosterRef.current.filter(p => p.alive && p.connected !== false).length)
+      setDaySkipLocked(false)
+    }
+
     if (nextPhase === 'night') {
       setKillerVote('')
       setDoctorVote('')
@@ -654,6 +665,58 @@ export default function PalermoClient() {
     const endsAt = startsAt + durationSeconds * 1000
     applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt)
     broadcast({ type: 'phase-change', phase: nextPhase, round: nextRound, startsAt, endsAt })
+  }
+
+  function currentDaySkipRequired() {
+    return gameRosterRef.current.filter(p => p.alive && p.connected !== false).length
+  }
+
+  function broadcastDaySkipState() {
+    const count = Object.keys(daySkipVotesRef.current).length
+    const required = currentDaySkipRequired()
+    setDaySkipCount(count)
+    setDaySkipRequired(required)
+    broadcast({ type: 'day-skip-state', count, required })
+  }
+
+  function finishDayEarly() {
+    if (!isHostRef.current || phaseRef.current !== 'day') return
+    if (roundRef.current === 0) hostSchedulePhase('night', 1, 15)
+    else hostSchedulePhase('vote', roundRef.current, 30)
+  }
+
+  function registerDaySkipVote(voterId) {
+    if (!isHostRef.current || phaseRef.current !== 'day' || !voterId) return false
+    const voter = gameRosterRef.current.find(p => p.id === voterId && p.alive && p.connected !== false)
+    if (!voter) return false
+    const voteKey = voter.clientKey || voter.id
+    if (daySkipVotesRef.current[voteKey]) return false
+
+    daySkipVotesRef.current = { ...daySkipVotesRef.current, [voteKey]: true }
+    broadcastDaySkipState()
+
+    const count = Object.keys(daySkipVotesRef.current).length
+    const required = currentDaySkipRequired()
+    if (required > 0 && count >= required) {
+      setTimeout(() => {
+        if (phaseRef.current === 'day') finishDayEarly()
+      }, 220)
+    }
+    return true
+  }
+
+  function voteToSkipDay() {
+    if (phase !== 'day' || observerMode || daySkipLocked) return
+    const myId = peerRef.current?.id
+    if (!myId) return
+    setDaySkipLocked(true)
+    if (isHost) {
+      if (!registerDaySkipVote(myId)) setDaySkipLocked(false)
+    } else if (hostConnRef.current?.open) {
+      hostConnRef.current.send({ type: 'day-skip-vote' })
+    } else {
+      setDaySkipLocked(false)
+    }
   }
   const chooseLanguage = value => {
     setLang(value)
@@ -1403,7 +1466,7 @@ export default function PalermoClient() {
       if (remaining <= 0 && isHost && !hostAdvanced) {
         hostAdvanced = true
         if (phase === 'night') resolveKillerVotes(killerVotesRef.current, doctorProtectedRef.current)
-        else if (phase === 'day') hostSchedulePhase('vote', round, 30)
+        else if (phase === 'day') round === 0 ? hostSchedulePhase('night', 1, 15) : hostSchedulePhase('vote', round, 30)
         else if (phase === 'vote') resolveDayVote(playerVotesRef.current)
       }
     }
@@ -1524,16 +1587,25 @@ export default function PalermoClient() {
     }
 
     if (phase === 'day') {
-      const morning = nightResolvedTarget
-        ? (lang === 'el'
-            ? `Η νύχτα τελείωσε. Ο παίκτης ${nightResolvedTarget} δεν επέζησε.`
-            : `The night is over. ${nightResolvedTarget} did not survive.`)
-        : (lang === 'el'
-            ? 'Η νύχτα τελείωσε. Κανείς δεν πέθανε.'
-            : 'The night is over. No one died.')
+      if (round === 0) {
+        speak(
+          lang === 'el'
+            ? 'Πριν πέσει η πρώτη νύχτα, έχετε δύο λεπτά να μιλήσετε. Παρατηρήστε τους άλλους και αποφασίστε ποιον εμπιστεύεστε.'
+            : 'Before the first night falls, you have two minutes to talk. Read the table and decide who you trust.',
+          { interrupt: true, rate: 0.87, pitch: 0.9 }
+        )
+      } else {
+        const morning = nightResolvedTarget
+          ? (lang === 'el'
+              ? `Η νύχτα τελείωσε. Ο παίκτης ${nightResolvedTarget} δεν επέζησε.`
+              : `The night is over. ${nightResolvedTarget} did not survive.`)
+          : (lang === 'el'
+              ? 'Η νύχτα τελείωσε. Κανείς δεν πέθανε.'
+              : 'The night is over. No one died.')
 
-      speak(morning, { interrupt: true, rate: 0.86, pitch: 0.88, pauseAfter: 500 })
-      speak(t('narrDay'), { rate: 0.91, pitch: 0.94 })
+        speak(morning, { interrupt: true, rate: 0.86, pitch: 0.88, pauseAfter: 500 })
+        speak(t('narrDay'), { rate: 0.91, pitch: 0.94 })
+      }
     }
 
     if (phase === 'vote') {
@@ -1567,7 +1639,7 @@ export default function PalermoClient() {
         await writeRoomRegistry({
           room_code: roomCode,
           room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0, 40),
-          host_name: cleanName,
+          host_name: normalizePlayerName(name),
           language: lang,
           access_mode: accessMode,
           player_count: players.length,
@@ -1889,6 +1961,7 @@ export default function PalermoClient() {
       roster: gameRosterRef.current,
       privateRoles: Array.from(privateRolesRef.current.entries()),
       playerVotes: playerVotesRef.current,
+      daySkipVotes: daySkipVotesRef.current,
       killerVotes: killerVotesRef.current,
       doctorProtected: doctorProtectedRef.current,
       voteScores,
@@ -1939,6 +2012,10 @@ export default function PalermoClient() {
 
     playerVotesRef.current = transferMapKey(snapshot.playerVotes || {}, oldSelfId, newHostPeerId)
     setPlayerVotes(playerVotesRef.current)
+    daySkipVotesRef.current = snapshot.daySkipVotes || {}
+    setDaySkipCount(Object.keys(daySkipVotesRef.current).length)
+    setDaySkipRequired(nextRoster.filter(p => p.alive && p.connected !== false).length)
+    setDaySkipLocked(!!daySkipVotesRef.current[selfKey])
     killerVotesRef.current = transferMapKey(snapshot.killerVotes || {}, oldSelfId, newHostPeerId)
     setKillerVotes(killerVotesRef.current)
     doctorProtectedRef.current = snapshot.doctorProtected || ''
@@ -2246,6 +2323,9 @@ export default function PalermoClient() {
       spectatorMessages: spectatorMessagesRef.current,
       voteLocked: !!playerVotesRef.current[conn.peer],
       voteTarget: playerVotesRef.current[conn.peer] || '',
+      daySkipLocked: !!daySkipVotesRef.current[clientKey],
+      daySkipCount: Object.keys(daySkipVotesRef.current).length,
+      daySkipRequired: currentDaySkipRequired(),
       matchId: matchIdRef.current,
     })
     broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
@@ -2345,6 +2425,10 @@ export default function PalermoClient() {
     setVote('')
     setVoteLocked(false)
     setPlayerVotes({})
+    daySkipVotesRef.current = {}
+    setDaySkipCount(0)
+    setDaySkipRequired(0)
+    setDaySkipLocked(false)
     playerVotesRef.current = {}
     setVoteScores({})
     setKillerVotes({})
@@ -2483,6 +2567,10 @@ export default function PalermoClient() {
           doctorProtectedRef.current = target
           setDoctorProtected(target)
         }
+      }
+
+      if (data.type === 'day-skip-vote') {
+        if (registerDaySkipVote(conn.peer)) conn.send({ type: 'day-skip-locked' })
       }
 
       if (data.type === 'player-vote') {
@@ -2677,6 +2765,9 @@ export default function PalermoClient() {
           setSpectatorMessages(Array.isArray(data.spectatorMessages) ? data.spectatorMessages : [])
           setVoteLocked(!!data.voteLocked)
           setVote(String(data.voteTarget || ''))
+          setDaySkipLocked(!!data.daySkipLocked)
+          setDaySkipCount(Math.max(0, Number(data.daySkipCount || 0)))
+          setDaySkipRequired(Math.max(0, Number(data.daySkipRequired || 0)))
           if (data.matchId) matchIdRef.current = String(data.matchId)
           setMaxPlayers(data.maxPlayers ?? maxPlayers)
           setMaxSpectators(data.maxSpectators ?? maxSpectators)
@@ -2696,10 +2787,15 @@ export default function PalermoClient() {
             screenRef.current = 'game'
             applyPhaseSchedule(
               data.phase || 'night',
-              Number(data.round || 1),
+              Number(data.round ?? 1),
               syncedHostNow(),
               Number(data.phaseEndsAt || 0)
             )
+            if (data.phase === 'day') {
+              setDaySkipLocked(!!data.daySkipLocked)
+              setDaySkipCount(Math.max(0, Number(data.daySkipCount || 0)))
+              setDaySkipRequired(Math.max(0, Number(data.daySkipRequired || 0)))
+            }
           }
           saveReconnectSession()
         }
@@ -2788,6 +2884,11 @@ export default function PalermoClient() {
         }
         if (data.type === 'kamikaze-result') {
           speak(`${data.kamikaze} ${t('kamikazeBoom')} ${data.target}.`)
+        }
+        if (data.type === 'day-skip-locked') setDaySkipLocked(true)
+        if (data.type === 'day-skip-state') {
+          setDaySkipCount(Math.max(0, Number(data.count || 0)))
+          setDaySkipRequired(Math.max(0, Number(data.required || 0)))
         }
         if (data.type === 'vote-locked') {
           setVote(String(data.target || vote))
@@ -3232,16 +3333,16 @@ export default function PalermoClient() {
     scheduledGameRef.current = setTimeout(() => {
       setCountdown(null)
       const actualStartsAt = Date.now()
-      const firstNightEndsAt = actualStartsAt + 15000
+      const openingDayEndsAt = actualStartsAt + 120000
       setScreen('game')
       screenRef.current = 'game'
-      applyPhaseSchedule('night', 1, actualStartsAt, firstNightEndsAt)
+      applyPhaseSchedule('day', 0, actualStartsAt, openingDayEndsAt)
       broadcast({
         type: 'game-begin',
-        phase: 'night',
-        round: 1,
+        phase: 'day',
+        round: 0,
         startsAt: actualStartsAt,
-        endsAt: firstNightEndsAt,
+        endsAt: openingDayEndsAt,
       })
     }, 5000)
   }
@@ -3679,6 +3780,10 @@ export default function PalermoClient() {
     setPhase('night')
     setRound(1)
     setVote('')
+    daySkipVotesRef.current = {}
+    setDaySkipCount(0)
+    setDaySkipRequired(0)
+    setDaySkipLocked(false)
     setGameRoster([])
     gameRosterRef.current = []
     setPlayerVotes({})
@@ -4229,10 +4334,15 @@ export default function PalermoClient() {
           )}
           <div className="caseMetaBar gameCaseMeta mafiaMetaBar">
             <span>{lang === 'el' ? 'Η ΣΥΝΑΝΤΗΣΗ' : 'THE SIT-DOWN'} // {roomCode}</span>
-            <b>{lang === 'el' ? `ΝΥΧΤΑ ${round}` : `NIGHT ${round}`}</b>
+            <b>{round === 0
+              ? (lang === 'el' ? 'ΠΡΟΛΟΓΟΣ' : 'PROLOGUE')
+              : (lang === 'el' ? `ΓΥΡΟΣ ${round}` : `ROUND ${round}`)}</b>
           </div>
           <div className="gameTop">
-            <div><small>{t('room')} {roomCode}</small><h2>{t('round')} {round}</h2></div>
+            <div>
+              <small>{t('room')} {roomCode}</small>
+              <h2>{round === 0 ? (lang === 'el' ? 'ΠΡΟΛΟΓΟΣ' : 'PROLOGUE') : `${t('round')} ${round}`}</h2>
+            </div>
             <div className={`phasePill ${phase}`}>{phase === 'night' ? `🌙 ${t('night')}` : phase === 'day' ? `☀️ ${t('day')}` : `🗳️ ${t('voting')}`}</div>
           </div>
 
@@ -4290,7 +4400,9 @@ export default function PalermoClient() {
                 {phase === 'night'
                   ? (lang === 'el' ? 'Η ΔΟΥΛΕΙΑ ΤΗΣ ΝΥΧΤΑΣ' : 'THE NIGHT BUSINESS')
                   : phase === 'day'
-                  ? (lang === 'el' ? 'ΤΟ ΣΥΜΒΟΥΛΙΟ' : 'THE SIT-DOWN')
+                  ? (round === 0
+                    ? (lang === 'el' ? 'ΠΡΙΝ ΤΗΝ ΠΡΩΤΗ ΝΥΧΤΑ' : 'BEFORE THE FIRST NIGHT')
+                    : (lang === 'el' ? 'ΤΟ ΣΥΜΒΟΥΛΙΟ' : 'THE SIT-DOWN'))
                   : (lang === 'el' ? 'Η ΑΠΟΦΑΣΗ' : 'THE VERDICT')}
               </div>
               {phase === 'night' && <>
@@ -4365,10 +4477,36 @@ export default function PalermoClient() {
 
               {phase === 'day' && <>
                 <div className="bigIcon">☀️</div>
-                <h3>{t('discussion')}</h3>
+                <h3>{round === 0
+                  ? (lang === 'el' ? 'ΗΜΕΡΑ ΓΝΩΡΙΜΙΑΣ' : 'OPENING DAY')
+                  : t('discussion')}</h3>
                 <div className="discussionTimer">{timerText}</div>
-                <p>{t('dayChatHint')}</p>
-                {!observerMode && myRole?.id === 'kamikaze' && (
+                <p>{round === 0
+                  ? (lang === 'el'
+                    ? 'Πριν πέσει η πρώτη νύχτα, έχετε δύο λεπτά να μιλήσετε, να διαβάσετε την παρέα και να μπείτε στο παιχνίδι.'
+                    : 'Before the first night, you have two minutes to talk, read the table, and settle into the game.')
+                  : t('dayChatHint')}</p>
+                {!observerMode && (
+                  <div className="daySkipPanel">
+                    <div className="daySkipInfo">
+                      <span>{lang === 'el' ? 'ΠΑΡΑΛΕΙΨΗ ΧΡΟΝΟΜΕΤΡΟΥ' : 'SKIP DISCUSSION TIMER'}</span>
+                      <b>{daySkipCount}/{daySkipRequired || gameRoster.filter(p => p.alive && p.connected !== false).length}</b>
+                    </div>
+                    <button
+                      className={daySkipLocked ? 'daySkipButton locked' : 'daySkipButton'}
+                      onClick={voteToSkipDay}
+                      disabled={daySkipLocked}
+                    >
+                      {daySkipLocked
+                        ? (lang === 'el' ? '✓ ΨΗΦΟΣ SKIP ΚΛΕΙΔΩΜΕΝΗ' : '✓ SKIP VOTE LOCKED')
+                        : (lang === 'el' ? 'ΨΗΦΙΣΕ SKIP' : 'VOTE TO SKIP')}
+                    </button>
+                    <small>{lang === 'el'
+                      ? 'Το χρονόμετρο παραλείπεται μόνο αν συμφωνήσουν όλοι οι ζωντανοί παίκτες.'
+                      : 'The timer is skipped only when every living player agrees.'}</small>
+                  </div>
+                )}
+                {!observerMode && round > 0 && myRole?.id === 'kamikaze' && (
                   <div className="kamikazePanel">
                     <div className="cardTitle"><span>💣 {t('kamikazeAction')}</span><b>{kamikazeUsed ? t('kamikazeUsed') : '1×'}</b></div>
                     <p>{t('kamikazeChoose')}</p>
