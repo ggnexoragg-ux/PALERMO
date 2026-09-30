@@ -77,7 +77,7 @@ const TEXT = {
     displayName: 'DISPLAY NAME',
     createRoom: 'CREATE ROOM',
     joinRoom: 'JOIN ROOM',
-    noAccount: 'NO ACCOUNT',
+    noAccount: 'ACCOUNTS + GUESTS',
     realPlayers: 'REAL PLAYERS',
     roomCodes: 'ROOM CODES',
     readySystem: 'READY SYSTEM',
@@ -246,7 +246,7 @@ const TEXT = {
     displayName: 'ΟΝΟΜΑ ΠΑΙΚΤΗ',
     createRoom: 'ΔΗΜΙΟΥΡΓΙΑ ΔΩΜΑΤΙΟΥ',
     joinRoom: 'ΣΥΜΜΕΤΟΧΗ ΣΕ ΔΩΜΑΤΙΟ',
-    noAccount: 'ΧΩΡΙΣ ΛΟΓΑΡΙΑΣΜΟ',
+    noAccount: 'ΛΟΓΑΡΙΑΣΜΟΙ + ΕΠΙΣΚΕΠΤΕΣ',
     realPlayers: 'ΠΡΑΓΜΑΤΙΚΟΙ ΠΑΙΚΤΕΣ',
     roomCodes: 'ΚΩΔΙΚΟΙ ΔΩΜΑΤΙΩΝ',
     readySystem: 'ΣΥΣΤΗΜΑ READY',
@@ -480,6 +480,17 @@ export default function PalermoClient() {
   const [dayText, setDayText] = useState('')
   const [menuMusicOn, setMenuMusicOn] = useState(true)
   const [kamikazeUsed, setKamikazeUsed] = useState(false)
+  const [authSession, setAuthSession] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authUsername, setAuthUsername] = useState('')
+  const [profileNameDraft, setProfileNameDraft] = useState('')
+  const [authStatus, setAuthStatus] = useState('idle')
+  const [authMessage, setAuthMessage] = useState('')
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -505,6 +516,206 @@ export default function PalermoClient() {
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
+  const avatarUrl = profile?.avatar_url || ''
+
+  function authHeaders(token = '') {
+    return {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${token || SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+    }
+  }
+
+  function saveAuthSession(session) {
+    setAuthSession(session || null)
+    if (typeof window === 'undefined') return
+    if (session?.refresh_token) localStorage.setItem('palermo-auth-v1', JSON.stringify(session))
+    else localStorage.removeItem('palermo-auth-v1')
+  }
+
+  async function loadProfile(userId, token, preferredUsername = '') {
+    if (!userId || !token) return null
+    const headers = authHeaders(token)
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?id=eq.${encodeURIComponent(userId)}&select=*`, { headers, cache: 'no-store' })
+    if (!res.ok) throw new Error('profile_load_failed')
+    let rows = await res.json()
+    let current = rows?.[0] || null
+    if (!current) {
+      const fallback = String(preferredUsername || authSession?.user?.user_metadata?.username || authEmail.split('@')[0] || 'Player').trim().slice(0, 18)
+      res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'return=representation' },
+        body: JSON.stringify({ id: userId, username: fallback || 'Player' }),
+      })
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}))
+        if (String(error?.code || '') === '23505') throw new Error('username_taken')
+        throw new Error('profile_create_failed')
+      }
+      rows = await res.json()
+      current = rows?.[0] || null
+    }
+    setProfile(current)
+    if (current?.username) {
+      setName(current.username)
+      setProfileNameDraft(current.username)
+    }
+    return current
+  }
+
+  async function restoreAuth() {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem('palermo-auth-v1')
+    if (!saved) return
+    try {
+      const parsed = JSON.parse(saved)
+      if (!parsed?.refresh_token) return
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ refresh_token: parsed.refresh_token }),
+      })
+      if (!res.ok) throw new Error('refresh_failed')
+      const session = await res.json()
+      saveAuthSession(session)
+      await loadProfile(session.user?.id, session.access_token, session.user?.user_metadata?.username)
+    } catch {
+      saveAuthSession(null)
+      setProfile(null)
+    }
+  }
+
+  async function submitAuth() {
+    setAuthStatus('loading')
+    setAuthMessage('')
+    try {
+      if (!authEmail.trim() || authPassword.length < 6) throw new Error('missing_auth')
+      if (authMode === 'signup' && authUsername.trim().length < 2) throw new Error('missing_username')
+      const endpoint = authMode === 'signup' ? 'signup' : 'token?grant_type=password'
+      const payload = authMode === 'signup'
+        ? { email: authEmail.trim(), password: authPassword, data: { username: authUsername.trim().slice(0, 18) } }
+        : { email: authEmail.trim(), password: authPassword }
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.msg || data?.message || 'auth_failed')
+      if (!data?.access_token) {
+        setAuthStatus('idle')
+        setAuthMessage(lang === 'el' ? 'Έλεγξε το email σου για επιβεβαίωση και μετά κάνε σύνδεση.' : 'Check your email to confirm the account, then sign in.')
+        setAuthMode('login')
+        return
+      }
+      saveAuthSession(data)
+      await loadProfile(data.user?.id, data.access_token, authMode === 'signup' ? authUsername : data.user?.user_metadata?.username)
+      setAuthStatus('success')
+      setAuthMessage('')
+      setAuthPassword('')
+      setTimeout(() => setAuthOpen(false), 250)
+    } catch (error) {
+      setAuthStatus('error')
+      const key = error?.message
+      setAuthMessage(
+        key === 'username_taken'
+          ? (lang === 'el' ? 'Αυτό το username χρησιμοποιείται ήδη.' : 'That username is already taken.')
+          : key === 'missing_username'
+          ? (lang === 'el' ? 'Βάλε username με τουλάχιστον 2 χαρακτήρες.' : 'Choose a username with at least 2 characters.')
+          : key === 'missing_auth'
+          ? (lang === 'el' ? 'Βάλε έγκυρο email και password τουλάχιστον 6 χαρακτήρων.' : 'Enter a valid email and a password with at least 6 characters.')
+          : (error?.message || (lang === 'el' ? 'Η σύνδεση απέτυχε.' : 'Sign in failed.'))
+      )
+    }
+  }
+
+  async function logoutAccount() {
+    try {
+      if (authSession?.access_token) {
+        await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+          method: 'POST',
+          headers: authHeaders(authSession.access_token),
+        })
+      }
+    } catch {}
+    saveAuthSession(null)
+    setProfile(null)
+    setName('')
+    setProfileNameDraft('')
+    setAuthOpen(false)
+  }
+
+  async function saveProfileName() {
+    const nextName = profileNameDraft.trim().slice(0, 18)
+    if (!authSession?.user?.id || !authSession?.access_token || nextName.length < 2) return
+    setAuthStatus('loading')
+    setAuthMessage('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?id=eq.${encodeURIComponent(authSession.user.id)}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(authSession.access_token), Prefer: 'return=representation' },
+        body: JSON.stringify({ username: nextName, updated_at: new Date().toISOString() }),
+      })
+      const data = await res.json().catch(() => [])
+      if (!res.ok) {
+        const first = Array.isArray(data) ? data[0] : data
+        if (String(first?.code || '') === '23505') throw new Error('username_taken')
+        throw new Error('profile_update_failed')
+      }
+      const nextProfile = data?.[0]
+      if (nextProfile) setProfile(nextProfile)
+      setName(nextName)
+      setAuthStatus('success')
+      setAuthMessage(lang === 'el' ? 'Το προφίλ αποθηκεύτηκε.' : 'Profile saved.')
+    } catch (error) {
+      setAuthStatus('error')
+      setAuthMessage(error?.message === 'username_taken'
+        ? (lang === 'el' ? 'Αυτό το username χρησιμοποιείται ήδη.' : 'That username is already taken.')
+        : (lang === 'el' ? 'Δεν ήταν δυνατή η αποθήκευση.' : 'Could not save the profile.'))
+    }
+  }
+
+  async function uploadAvatar(file) {
+    if (!file || !authSession?.user?.id || !authSession?.access_token) return
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Χρησιμοποίησε JPG, PNG, WEBP ή GIF έως 2MB.' : 'Use JPG, PNG, WEBP, or GIF up to 2MB.')
+      return
+    }
+    setAvatarUploading(true)
+    setAuthMessage('')
+    try {
+      const ext = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1]
+      const objectPath = `${authSession.user.id}/avatar.${ext}`
+      const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/palermo-avatars/${objectPath}`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${authSession.access_token}`,
+          'Content-Type': file.type,
+          'x-upsert': 'true',
+        },
+        body: file,
+      })
+      if (!uploadRes.ok) throw new Error('avatar_upload_failed')
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/palermo-avatars/${objectPath}?v=${Date.now()}`
+      const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?id=eq.${encodeURIComponent(authSession.user.id)}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(authSession.access_token), Prefer: 'return=representation' },
+        body: JSON.stringify({ avatar_url: publicUrl, updated_at: new Date().toISOString() }),
+      })
+      const rows = await profileRes.json().catch(() => [])
+      if (!profileRes.ok) throw new Error('avatar_profile_failed')
+      if (rows?.[0]) setProfile(rows[0])
+      setAuthStatus('success')
+      setAuthMessage(lang === 'el' ? 'Η φωτογραφία προφίλ ενημερώθηκε.' : 'Profile picture updated.')
+    } catch {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Δεν ήταν δυνατή η μεταφόρτωση της εικόνας.' : 'Could not upload the image.')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   function startMenuMusic() {
     if (!menuMusicOn || typeof window === 'undefined' || menuAudioRef.current) return
@@ -581,6 +792,7 @@ export default function PalermoClient() {
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { spectatorsRef.current = spectators }, [spectators])
   useEffect(() => { screenRef.current = screen }, [screen])
+  useEffect(() => { restoreAuth() }, [])
 
   useEffect(() => {
     const existing = document.querySelector('script[data-peerjs]')
@@ -885,6 +1097,7 @@ export default function PalermoClient() {
     const entry = {
       id: conn.peer,
       name: String(data.name || 'Player').slice(0, 18),
+      avatarUrl: String(data.avatarUrl || ''),
       ready: false,
       isHost: false,
     }
@@ -1004,7 +1217,7 @@ export default function PalermoClient() {
           conn.send({ type: 'join-error', message: t('joinFail') })
           return
         }
-        admitGuest(conn, { name: data.name, mode: data.mode || 'player' })
+        admitGuest(conn, { name: data.name, avatarUrl: data.avatarUrl, mode: data.mode || 'player' })
         return
       }
 
@@ -1021,6 +1234,7 @@ export default function PalermoClient() {
             {
               peerId: conn.peer,
               name: String(data.name || 'Player').slice(0, 18),
+              avatarUrl: String(data.avatarUrl || ''),
               mode: data.mode === 'spectator' ? 'spectator' : 'player',
             }
           ])
@@ -1122,7 +1336,7 @@ export default function PalermoClient() {
     peer.on('call', handleIncomingVoiceCall)
 
     peer.on('open', id => {
-      const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
+      const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
       writeRoomRegistry({
         room_code: code,
         room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
@@ -1172,7 +1386,7 @@ export default function PalermoClient() {
       hostConnRef.current = conn
 
       conn.on('open', () => {
-        conn.send({ type: 'join', name: name.trim(), mode: joinMode, accessCode: joinAccessCode })
+        conn.send({ type: 'join', name: name.trim(), avatarUrl, mode: joinMode, accessCode: joinAccessCode })
         setJoinPending(true)
         setConnectionState('waiting')
       })
@@ -1825,7 +2039,7 @@ export default function PalermoClient() {
       peerRef.current = peer
       peer.on('call', handleIncomingVoiceCall)
       peer.on('open', id => {
-        const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
+        const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
         writeRoomRegistry({
           room_code: newCode,
           room_name: (settings.roomName || `${name.trim()}'s Room`).slice(0,40),
@@ -1862,6 +2076,7 @@ export default function PalermoClient() {
             type: 'session-rejoin',
             token: payload.rejoinToken,
             name: name.trim(),
+            avatarUrl,
             mode: joinMode,
           })
         })
@@ -1952,6 +2167,12 @@ export default function PalermoClient() {
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {screen !== 'language' && <button onClick={() => setScreen('language')} style={{padding:'8px 10px'}}>{lang === 'el' ? 'ΕΛ' : 'EN'}</button>}
           {screen !== 'language' && <button className="howToButton" onClick={() => setHowToOpen(true)}>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</button>}
+          {screen !== 'language' && (
+            <button className="accountButton" onClick={() => { setAuthMessage(''); setProfileNameDraft(profile?.username || ''); setAuthOpen(true) }}>
+              {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile?.username?.[0]?.toUpperCase() || '👤'}</span>}
+              <b>{profile?.username || (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN')}</b>
+            </button>
+          )}
           <div className="palermoBadge">{connectionState === 'connected' ? t('realtimeLobby') : t('browserGame')}</div>
         </div>
       </header>
@@ -1977,7 +2198,7 @@ export default function PalermoClient() {
 
           <div className="palermoEntry card">
             <label>{t('displayName')}</label>
-            <input value={name} onChange={e => setName(e.target.value)} maxLength={18} placeholder="e.g. Soul" />
+            <input value={name} onChange={e => setName(e.target.value)} maxLength={18} placeholder="e.g. Soul" disabled={!!profile} />
             <label style={{marginTop:12}}>{t('roomName')}</label>
             <input value={roomName} onChange={e => setRoomName(e.target.value)} maxLength={40} placeholder={name.trim() ? `${name.trim()}'s Room` : 'Palermo Room'} />
             <label style={{marginTop:12}}>{t('access')}</label>
@@ -2051,7 +2272,7 @@ export default function PalermoClient() {
               <div className="playerList">
                 {players.map((player, i) => (
                   <div className="playerRow" key={player.id || i}>
-                    <span className="avatar">{player.name.slice(0,1).toUpperCase()}</span>
+                    <span className="avatar">{player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : player.name.slice(0,1).toUpperCase()}</span>
                     <strong>{player.name}{player.isHost ? ' 👑' : ''}</strong>
                     <i className={player.ready ? 'readyDot on' : 'readyDot'} />
                     <small>{player.ready ? t('ready') : t('notReady')}</small>
@@ -2085,7 +2306,7 @@ export default function PalermoClient() {
                   {pendingRequests.map(req => (
                     <div className="joinRequestRow" key={req.peerId}>
                       <div className="joinRequestPlayer">
-                        <span className="avatar">{req.name.slice(0,1).toUpperCase()}</span>
+                        <span className="avatar">{req.avatarUrl ? <img src={req.avatarUrl} alt="" /> : req.name.slice(0,1).toUpperCase()}</span>
                         <div className="joinRequestMeta">
                           <strong>{req.name}</strong>
                           <small>{req.mode === 'spectator' ? t('spectator') : t('player')}</small>
@@ -2115,7 +2336,7 @@ export default function PalermoClient() {
 
               {!roleConfigValid && <div className="prototypeNotice">{lang === 'el' ? 'Έχεις επιλέξει περισσότερους ειδικούς ρόλους από τους διαθέσιμους παίκτες.' : 'You selected more special-role slots than available players.'}</div>}
               <div className="roleTotal">{t('spectators')} <b>{spectators.length}/{maxSpectators}</b></div>
-              {spectators.map(s => <div className="playerRow" key={s.id}><span className="avatar">{s.name[0]}</span><strong>{s.name}</strong><small>{t('spectator')}</small></div>)}
+              {spectators.map(s => <div className="playerRow" key={s.id}><span className="avatar">{s.avatarUrl ? <img src={s.avatarUrl} alt="" /> : s.name[0]}</span><strong>{s.name}</strong><small>{t('spectator')}</small></div>)}
             </div>
           </div>
 
@@ -2399,6 +2620,70 @@ export default function PalermoClient() {
             )}
           </div>
         </section>
+      )}
+
+      {authOpen && (
+        <div className="authBackdrop" onClick={() => setAuthOpen(false)}>
+          <div className="authModal card" onClick={e => e.stopPropagation()}>
+            <div className="authHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // PROFILE</div>
+                <h2>{profile ? (lang === 'el' ? 'ΤΟ ΠΡΟΦΙΛ ΣΟΥ' : 'YOUR PROFILE') : (authMode === 'signup' ? (lang === 'el' ? 'ΔΗΜΙΟΥΡΓΙΑ ΛΟΓΑΡΙΑΣΜΟΥ' : 'CREATE ACCOUNT') : (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN'))}</h2>
+              </div>
+              <button className="bugClose" onClick={() => setAuthOpen(false)}>×</button>
+            </div>
+
+            {profile ? (
+              <div className="profilePanel">
+                <div className="profileHero">
+                  <label className="profileAvatarPicker">
+                    {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile.username?.[0]?.toUpperCase() || 'P'}</span>}
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e => uploadAvatar(e.target.files?.[0])} />
+                  </label>
+                  <div>
+                    <strong>{profile.username}</strong>
+                    <small>{authSession?.user?.email}</small>
+                    <span>{avatarUploading ? (lang === 'el' ? 'ΑΝΕΒΑΖΕΙ...' : 'UPLOADING...') : (lang === 'el' ? 'ΠΑΤΑ ΤΗΝ ΕΙΚΟΝΑ ΓΙΑ ΑΛΛΑΓΗ' : 'CLICK IMAGE TO CHANGE')}</span>
+                  </div>
+                </div>
+                <label>{lang === 'el' ? 'USERNAME' : 'USERNAME'}</label>
+                <input value={profileNameDraft} onChange={e => setProfileNameDraft(e.target.value)} maxLength={18} />
+                <div className="profileStats">
+                  <div><b>{profile.games_played || 0}</b><span>{lang === 'el' ? 'ΠΑΙΧΝΙΔΙΑ' : 'GAMES'}</span></div>
+                  <div><b>{profile.wins || 0}</b><span>{lang === 'el' ? 'ΝΙΚΕΣ' : 'WINS'}</span></div>
+                  <div><b>{profile.mvps || 0}</b><span>MVP</span></div>
+                </div>
+                {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
+                <div className="authActions">
+                  <button className="primary" disabled={authStatus === 'loading' || profileNameDraft.trim().length < 2} onClick={saveProfileName}>{lang === 'el' ? 'ΑΠΟΘΗΚΕΥΣΗ' : 'SAVE PROFILE'}</button>
+                  <button className="danger" onClick={logoutAccount}>{lang === 'el' ? 'ΑΠΟΣΥΝΔΕΣΗ' : 'SIGN OUT'}</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="modeSwitch">
+                  <button className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthMessage('') }}>{lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN'}</button>
+                  <button className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage('') }}>{lang === 'el' ? 'ΕΓΓΡΑΦΗ' : 'CREATE ACCOUNT'}</button>
+                </div>
+                {authMode === 'signup' && (
+                  <>
+                    <label>USERNAME</label>
+                    <input value={authUsername} onChange={e => setAuthUsername(e.target.value)} maxLength={18} placeholder="Soul" />
+                  </>
+                )}
+                <label>EMAIL</label>
+                <input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="you@example.com" />
+                <label>PASSWORD</label>
+                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={6} placeholder="••••••••" />
+                {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
+                <button className="primary wide authSubmit" disabled={authStatus === 'loading'} onClick={submitAuth}>
+                  {authStatus === 'loading' ? (lang === 'el' ? 'ΠΕΡΙΜΕΝΕ...' : 'PLEASE WAIT...') : authMode === 'signup' ? (lang === 'el' ? 'ΔΗΜΙΟΥΡΓΙΑ ΛΟΓΑΡΙΑΣΜΟΥ' : 'CREATE ACCOUNT') : (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN')}
+                </button>
+                <p className="authHint">{lang === 'el' ? 'Η σύνδεσή σου αποθηκεύεται σε αυτή τη συσκευή ώστε το προφίλ και η μελλοντική πρόοδος να παραμένουν.' : 'Your login stays saved on this device so your profile and future progress remain available.'}</p>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {howToOpen && (
