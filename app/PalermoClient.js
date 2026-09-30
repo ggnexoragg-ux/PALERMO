@@ -538,6 +538,7 @@ export default function PalermoClient() {
   const [matchHistory, setMatchHistory] = useState([])
   const [matchHistoryLoading, setMatchHistoryLoading] = useState(false)
   const [matchHistoryError, setMatchHistoryError] = useState('')
+  const [resultBanner, setResultBanner] = useState(null)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -589,6 +590,13 @@ export default function PalermoClient() {
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
+
+  function showResultBanner(kind, title, detail = '') {
+    setResultBanner({ kind, title, detail, id: Date.now() })
+    setTimeout(() => {
+      setResultBanner(current => current?.title === title ? null : current)
+    }, 2400)
+  }
 
   function clearScheduledGameTimers() {
     if (scheduledGameRef.current) clearTimeout(scheduledGameRef.current)
@@ -2351,6 +2359,13 @@ export default function PalermoClient() {
         if (data.type === 'night-result') {
           setNightResolvedTarget(data.target || '')
           setNightSaved(!!data.saved)
+          if (data.saved) {
+            showResultBanner('safe', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΠΕΘΑΝΕ' : 'NO ONE DIED', lang === 'el' ? 'Ο Γιατρός έσωσε τον στόχο.' : 'The Doctor saved the target.')
+          } else if (data.target) {
+            showResultBanner('death', data.target, lang === 'el' ? 'ΔΕΝ ΕΠΕΖΗΣΕ ΤΗ ΝΥΧΤΑ' : 'DID NOT SURVIVE THE NIGHT')
+          } else {
+            showResultBanner('safe', lang === 'el' ? 'Η ΝΥΧΤΑ ΗΤΑΝ ΗΣΥΧΗ' : 'A QUIET NIGHT', lang === 'el' ? 'Κανείς δεν πέθανε.' : 'Nobody died.')
+          }
         }
         if (data.type === 'game-state') {
           setGameRoster(data.roster || [])
@@ -2376,11 +2391,13 @@ export default function PalermoClient() {
         }
         if (data.type === 'vote-result') {
           if (data.name && data.roleLabel) {
+            showResultBanner('eliminated', data.name, `${lang === 'el' ? 'ΡΟΛΟΣ' : 'ROLE'}: ${data.roleLabel}`)
             speak(lang === 'el'
               ? `Η ψηφοφορία ολοκληρώθηκε. Ο παίκτης ${data.name} αποκλείστηκε. Ο ρόλος του ήταν ${data.roleLabel}.`
               : `The votes are in. ${data.name} has been eliminated. Their role was ${data.roleLabel}.`,
               { interrupt: true, rate: 0.87, pitch: 0.9 })
           } else {
+            showResultBanner('skip', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION', lang === 'el' ? 'Η ψηφοφορία δεν έβγαλε νικητή.' : 'The vote ended without a clear target.')
             speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
           }
         }
@@ -2968,6 +2985,7 @@ export default function PalermoClient() {
       const victim = rosterNow.find(p => p.name === eliminatedName && p.alive)
       if (victim) {
         const roleLabel = roleName({ id: victim.roleId })
+        showResultBanner('eliminated', victim.name, `${lang === 'el' ? 'ΡΟΛΟΣ' : 'ROLE'}: ${roleLabel}`)
         speak(lang === 'el'
           ? `Η ψηφοφορία ολοκληρώθηκε. Ο παίκτης ${victim.name} αποκλείστηκε. Ο ρόλος του ήταν ${roleLabel}.`
           : `The votes are in. ${victim.name} has been eliminated. Their role was ${roleLabel}.`,
@@ -2988,6 +3006,7 @@ export default function PalermoClient() {
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
     } else {
+      showResultBanner('skip', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION', lang === 'el' ? 'Η ψηφοφορία δεν έβγαλε νικητή.' : 'The vote ended without a clear target.')
       speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
       broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
@@ -3016,6 +3035,13 @@ export default function PalermoClient() {
 
     setNightSaved(saved)
     setNightResolvedTarget(resolvedTarget)
+    if (saved) {
+      showResultBanner('safe', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΠΕΘΑΝΕ' : 'NO ONE DIED', lang === 'el' ? 'Ο Γιατρός έσωσε τον στόχο.' : 'The Doctor saved the target.')
+    } else if (resolvedTarget) {
+      showResultBanner('death', resolvedTarget, lang === 'el' ? 'ΔΕΝ ΕΠΕΖΗΣΕ ΤΗ ΝΥΧΤΑ' : 'DID NOT SURVIVE THE NIGHT')
+    } else {
+      showResultBanner('safe', lang === 'el' ? 'Η ΝΥΧΤΑ ΗΤΑΝ ΗΣΥΧΗ' : 'A QUIET NIGHT', lang === 'el' ? 'Κανείς δεν πέθανε.' : 'Nobody died.')
+    }
     broadcast({ type: 'night-result', target: resolvedTarget, saved })
 
     if (resolvedTarget) {
@@ -3485,7 +3511,7 @@ export default function PalermoClient() {
 
       {screen === 'role' && myRole && (
         <section className="roleRevealWrap">
-          <div className="roleReveal card">
+          <div className="roleReveal card roleRevealAnimated">
             <div className="palermoEyebrow">{t('privateScreen')}</div>
             <div className="roleEmoji">{myRole.emoji}</div>
             <small>{t('yourRole')}</small>
@@ -3522,7 +3548,17 @@ export default function PalermoClient() {
       )}
 
       {screen === 'game' && (
-        <section className="gameWrap">
+        <section className={`gameWrap phase-${phase}`}>
+          <div key={`phase-${phase}-${round}`} className={`phaseTransitionFlash ${phase}`} aria-hidden="true">
+            <span>{phase === 'night' ? '🌙' : phase === 'day' ? '☀️' : '🗳️'}</span>
+            <strong>{phase === 'night' ? t('night') : phase === 'day' ? t('day') : t('voting')}</strong>
+          </div>
+          {resultBanner && (
+            <div key={resultBanner.id} className={`resultBanner ${resultBanner.kind}`}>
+              <strong>{resultBanner.title}</strong>
+              {resultBanner.detail && <span>{resultBanner.detail}</span>}
+            </div>
+          )}
           <div className="gameTop">
             <div><small>{t('room')} {roomCode}</small><h2>{t('round')} {round}</h2></div>
             <div className={`phasePill ${phase}`}>{phase === 'night' ? `🌙 ${t('night')}` : phase === 'day' ? `☀️ ${t('day')}` : `🗳️ ${t('voting')}`}</div>
@@ -3555,7 +3591,7 @@ export default function PalermoClient() {
               </div>
             </aside>
 
-            <div className="card phaseCard">
+            <div key={`${phase}-${round}`} className={`card phaseCard phaseCardAnimated ${phase}`}>
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
                 <h3>{t('citySleeping')}</h3>
@@ -3736,7 +3772,7 @@ export default function PalermoClient() {
 
       {screen === 'gameOver' && (
         <section className="roleRevealWrap">
-          <div className="roleReveal card endGameCard">
+          <div className="roleReveal card endGameCard gameOverAnimated">
             <div className="palermoEyebrow">PALERMO // SESSION COMPLETE</div>
             <div className="roleEmoji">🏁</div>
             <h2>{gameWinner === 'madness' ? t('madnessWins') : gameWinner === 'killers' ? t('killersWin') : gameWinner === 'citizens' ? t('citizensWin') : t('gameOver')}</h2>
