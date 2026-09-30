@@ -22,16 +22,29 @@ const REGISTRY_HEADERS = {
   'Content-Type': 'application/json',
 }
 
+const TURN_USERNAME = process.env.NEXT_PUBLIC_TURN_USERNAME || ''
+const TURN_CREDENTIAL = process.env.NEXT_PUBLIC_TURN_CREDENTIAL || ''
+const TURN_HOST = process.env.NEXT_PUBLIC_TURN_HOST || 'global.relay.metered.ca'
+
+const TURN_ICE_SERVERS = TURN_USERNAME && TURN_CREDENTIAL
+  ? [
+      { urls: `turn:${TURN_HOST}:80`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: `turn:${TURN_HOST}:80?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: `turn:${TURN_HOST}:443`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+      { urls: `turns:${TURN_HOST}:443?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+    ]
+  : []
+
 const PEER_OPTIONS = {
   debug: 1,
   config: {
     iceServers: [
+      { urls: 'stun:stun.relay.metered.ca:80' },
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
+      ...TURN_ICE_SERVERS,
     ],
+    iceTransportPolicy: 'all',
     sdpSemantics: 'unified-plan',
   },
 }
@@ -575,46 +588,43 @@ export default function PalermoClient() {
   }
 
   function applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt) {
+    // The host is the only authority that advances game phases. Clients only
+    // render the host-provided deadline and apply a phase after receiving it.
     if (scheduledPhaseRef.current) clearTimeout(scheduledPhaseRef.current)
+    scheduledPhaseRef.current = null
 
-    const apply = () => {
-      setPhase(nextPhase)
-      phaseRef.current = nextPhase
-      setRound(nextRound)
-      setPhaseEndsAt(Number(endsAt || 0))
-      setVote('')
-      setVoteLocked(false)
+    setPhase(nextPhase)
+    phaseRef.current = nextPhase
+    setRound(nextRound)
+    setPhaseEndsAt(Number(endsAt || 0))
+    setVote('')
+    setVoteLocked(false)
 
-      if (nextPhase === 'night') {
-        setKillerVote('')
-        setDoctorVote('')
-        setNightResolvedTarget('')
-        setNightSaved(false)
-        if (isHost) {
-          setKillerVotes({})
-          killerVotesRef.current = {}
-          setDoctorProtected('')
-          doctorProtectedRef.current = ''
-        }
-      } else if (nextPhase === 'vote') {
-        setPlayerVotes({})
-        playerVotesRef.current = {}
+    if (nextPhase === 'night') {
+      setKillerVote('')
+      setDoctorVote('')
+      setNightResolvedTarget('')
+      setNightSaved(false)
+      if (isHost) {
+        setKillerVotes({})
+        killerVotesRef.current = {}
+        setDoctorProtected('')
+        doctorProtectedRef.current = ''
       }
-
-      setTimeout(updateVoiceGate, 0)
+    } else if (nextPhase === 'vote') {
+      setPlayerVotes({})
+      playerVotesRef.current = {}
     }
 
-    const delay = Math.max(0, Number(startsAt || 0) - syncedHostNow())
-    if (delay <= 20) apply()
-    else scheduledPhaseRef.current = setTimeout(apply, delay)
+    setTimeout(updateVoiceGate, 0)
   }
 
-  function hostSchedulePhase(nextPhase, nextRound, durationSeconds, leadMs = 500) {
+  function hostSchedulePhase(nextPhase, nextRound, durationSeconds) {
     if (!isHost) return
-    const startsAt = Date.now() + leadMs
+    const startsAt = Date.now()
     const endsAt = startsAt + durationSeconds * 1000
-    broadcast({ type: 'phase-change', phase: nextPhase, round: nextRound, startsAt, endsAt })
     applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt)
+    broadcast({ type: 'phase-change', phase: nextPhase, round: nextRound, startsAt, endsAt })
   }
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
   const avatarUrl = profile?.avatar_url || ''
@@ -1037,6 +1047,16 @@ export default function PalermoClient() {
     script.dataset.peerjs = 'true'
     document.head.appendChild(script)
   }, [])
+
+  useEffect(() => {
+    if (screen !== 'role' || !gameStartsAt) return
+    const tick = () => {
+      setCountdown(Math.max(0, Math.ceil((gameStartsAt - syncedHostNow()) / 1000)))
+    }
+    tick()
+    const timer = setInterval(tick, 100)
+    return () => clearInterval(timer)
+  }, [screen, gameStartsAt, isHost])
 
   useEffect(() => {
     if (screen !== 'game' || !phaseEndsAt) return
@@ -1814,32 +1834,24 @@ export default function PalermoClient() {
         }
         if (data.type === 'countdown') setCountdown(data.value)
         if (data.type === 'game-start') {
-          const revealAt = Number(data.revealAt || syncedHostNow())
-          const startsAt = Number(data.gameStartsAt || (revealAt + 5000))
-          const firstNightEndsAt = Number(data.phaseEndsAt || (startsAt + 15000))
+          const startsAt = Number(data.gameStartsAt || (syncedHostNow() + 5000))
           setMyRole(data.role)
           setGameStartsAt(startsAt)
-          setCountdown(5)
-
-          const updateRoleCountdown = () => {
-            setCountdown(Math.max(0, Math.ceil((startsAt - syncedHostNow()) / 1000)))
-          }
-          updateRoleCountdown()
-          const countdownTimer = setInterval(updateRoleCountdown, 100)
-
-          setTimeout(() => {
-            setScreen('role')
-            screenRef.current = 'role'
-          }, Math.max(0, revealAt - syncedHostNow()))
-
+          setCountdown(Math.max(0, Math.ceil((startsAt - syncedHostNow()) / 1000)))
           clearScheduledGameTimers()
-          scheduledGameRef.current = setTimeout(() => {
-            clearInterval(countdownTimer)
-            setCountdown(null)
-            setScreen('game')
-            screenRef.current = 'game'
-            applyPhaseSchedule('night', 1, startsAt, firstNightEndsAt)
-          }, Math.max(0, startsAt - syncedHostNow()))
+          setScreen('role')
+          screenRef.current = 'role'
+        }
+        if (data.type === 'game-begin') {
+          setCountdown(null)
+          setScreen('game')
+          screenRef.current = 'game'
+          applyPhaseSchedule(
+            data.phase || 'night',
+            data.round || 1,
+            Number(data.startsAt || syncedHostNow()),
+            Number(data.endsAt || 0)
+          )
         }
         if (data.type === 'night-result') {
           setNightResolvedTarget(data.target || '')
@@ -2008,9 +2020,8 @@ export default function PalermoClient() {
       alive: true,
     }))
 
-    const revealAt = Date.now() + 1500
+    const revealAt = Date.now()
     const startsAt = revealAt + 5000
-    const firstNightEndsAt = startsAt + 15000
 
     setGameRoster(roster)
     gameRosterRef.current = roster
@@ -2024,7 +2035,7 @@ export default function PalermoClient() {
     kamikazeUsedRef.current = new Set()
     setDayMessages([])
     setGameStartsAt(startsAt)
-    setPhaseEndsAt(firstNightEndsAt)
+    setPhaseEndsAt(0)
     broadcast({ type: 'game-state', roster: publicRoster(roster) })
 
     assigned.forEach(({ player, role }) => {
@@ -2046,7 +2057,6 @@ export default function PalermoClient() {
         role: privateRole,
         revealAt,
         gameStartsAt: startsAt,
-        phaseEndsAt: firstNightEndsAt,
       }
 
       if (player.isHost) setMyRole(privateRole)
@@ -2054,25 +2064,26 @@ export default function PalermoClient() {
     })
 
     setCountdown(5)
-    const updateRoleCountdown = () => {
-      setCountdown(Math.max(0, Math.ceil((startsAt - Date.now()) / 1000)))
-    }
-    updateRoleCountdown()
-    const countdownTimer = setInterval(updateRoleCountdown, 100)
-
-    setTimeout(() => {
-      setScreen('role')
-      screenRef.current = 'role'
-    }, Math.max(0, revealAt - Date.now()))
+    setScreen('role')
+    screenRef.current = 'role'
 
     clearScheduledGameTimers()
+    // Only the host owns the role-reveal transition. Clients wait for game-begin.
     scheduledGameRef.current = setTimeout(() => {
-      clearInterval(countdownTimer)
       setCountdown(null)
+      const actualStartsAt = Date.now()
+      const firstNightEndsAt = actualStartsAt + 15000
       setScreen('game')
       screenRef.current = 'game'
-      applyPhaseSchedule('night', 1, startsAt, firstNightEndsAt)
-    }, Math.max(0, startsAt - Date.now()))
+      applyPhaseSchedule('night', 1, actualStartsAt, firstNightEndsAt)
+      broadcast({
+        type: 'game-begin',
+        phase: 'night',
+        round: 1,
+        startsAt: actualStartsAt,
+        endsAt: firstNightEndsAt,
+      })
+    }, 5000)
   }
 
   async function requestMic() {
