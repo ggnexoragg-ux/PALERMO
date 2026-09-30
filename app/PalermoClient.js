@@ -7,8 +7,8 @@ const DEFAULT_ROLES = [
   { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
-  { id: 'lover', label: 'Lover', emoji: '❤️', count: 2, min: 0 },
-  { id: 'madness', label: 'Madness', emoji: '🌀', count: 1, min: 0 },
+  { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
+  { id: 'madness', label: 'Madness', emoji: '🌀', count: 0, min: 0 },
 ]
 
 const citizen = { id: 'citizen', label: 'Citizen', emoji: '👤' }
@@ -214,6 +214,8 @@ const TEXT = {
     voteTime: 'TIME TO VOTE',
     eliminated: 'was eliminated. Their role was',
     noElimination: 'No player was eliminated.',
+    nightDeath: 'did not survive the night.',
+    nightSafe: 'No one died during the night.',
     music: 'MENU MUSIC',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -375,6 +377,8 @@ const TEXT = {
     voteTime: 'ΩΡΑ ΓΙΑ ΨΗΦΟ',
     eliminated: 'αποχώρησε από το παιχνίδι. Ο ρόλος ήταν',
     noElimination: 'Κανένας παίκτης δεν αποχώρησε.',
+    nightDeath: 'δεν επέζησε από τη νύχτα.',
+    nightSafe: 'Κανένας δεν πέθανε κατά τη διάρκεια της νύχτας.',
     music: 'ΜΟΥΣΙΚΗ MENU',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -631,7 +635,10 @@ export default function PalermoClient() {
   useEffect(() => {
     if (screen !== 'game') return
     if (phase === 'night') speak(t('narrNight'))
-    if (phase === 'day') speak(t('narrDay'))
+    if (phase === 'day') {
+      const morning = nightResolvedTarget ? `${nightResolvedTarget} ${t('nightDeath')}` : t('nightSafe')
+      speak(`${t('narrDay')} ${morning}`)
+    }
     if (phase === 'vote') speak(t('narrVote'))
   }, [screen, phase, round, lang, narratorOn])
 
@@ -1289,8 +1296,6 @@ export default function PalermoClient() {
     setPlayerVotes(current => {
       const next = { ...current, [voterId]: target }
       playerVotesRef.current = next
-      const living = aliveRoster(rosterNow)
-      if (Object.keys(next).length >= living.length) setTimeout(() => resolveDayVote(next), 0)
       return next
     })
   }
@@ -1389,7 +1394,7 @@ export default function PalermoClient() {
     }
 
     setPhase('day')
-    setDiscussion(180)
+    setDiscussion(120)
     broadcast({ type: 'phase-change', phase: 'day', round })
   }
 
@@ -1911,7 +1916,6 @@ export default function PalermoClient() {
                     </form>
                   </div>
                 )}
-                {isHost && <button className="wide" onClick={nextPhase}>{t('startVote')}</button>}
               </>}
 
               {phase === 'vote' && <>
