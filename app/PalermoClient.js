@@ -118,6 +118,8 @@ const TEXT = {
     connected: 'CONNECTED',
     room: 'ROOM',
     copyCode: 'COPY CODE',
+    inviteFriends: 'INVITE FRIENDS',
+    inviteCopied: 'INVITE COPIED',
     players: 'PLAYERS',
     ready: 'READY',
     notReady: 'NOT READY',
@@ -287,6 +289,8 @@ const TEXT = {
     connected: 'ΣΥΝΔΕΔΕΜΕΝΟ',
     room: 'ΔΩΜΑΤΙΟ',
     copyCode: 'ΑΝΤΙΓΡΑΦΗ ΚΩΔΙΚΟΥ',
+    inviteFriends: 'ΠΡΟΣΚΛΗΣΗ ΦΙΛΩΝ',
+    inviteCopied: 'Η ΠΡΟΣΚΛΗΣΗ ΑΝΤΙΓΡΑΦΗΚΕ',
     players: 'ΠΑΙΚΤΕΣ',
     ready: 'ΕΤΟΙΜΟΣ',
     notReady: 'ΟΧΙ ΕΤΟΙΜΟΣ',
@@ -530,6 +534,7 @@ export default function PalermoClient() {
   const [leaderboardRows, setLeaderboardRows] = useState([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardError, setLeaderboardError] = useState('')
+  const [shareStatus, setShareStatus] = useState('')
   const [matchHistory, setMatchHistory] = useState([])
   const [matchHistoryLoading, setMatchHistoryLoading] = useState(false)
   const [matchHistoryError, setMatchHistoryError] = useState('')
@@ -629,7 +634,22 @@ export default function PalermoClient() {
     applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt)
     broadcast({ type: 'phase-change', phase: nextPhase, round: nextRound, startsAt, endsAt })
   }
-  const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
+  const chooseLanguage = value => {
+    setLang(value)
+    let inviteCode = ''
+    if (typeof window !== 'undefined') {
+      inviteCode = String(new URLSearchParams(window.location.search).get('room') || '').trim().toUpperCase()
+    }
+    if (inviteCode) {
+      setJoinCode(inviteCode)
+      setScreen('join')
+      screenRef.current = 'join'
+    } else {
+      setScreen('home')
+      screenRef.current = 'home'
+      if (menuMusicOn) startMenuMusic()
+    }
+  }
   const avatarUrl = profile?.avatar_url || ''
 
   function authHeaders(token = '') {
@@ -2512,6 +2532,33 @@ export default function PalermoClient() {
     })
   }
 
+  async function shareRoomInvite() {
+    if (!roomCode) return
+    const inviteUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomCode)}`
+      : roomCode
+    const title = lang === 'el' ? 'Palermo Online — Πρόσκληση' : 'Palermo Online — Invite'
+    const text = lang === 'el'
+      ? `Μπες στο δωμάτιό μου στο Palermo. Κωδικός: ${roomCode}`
+      : `Join my Palermo room. Code: ${roomCode}`
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url: inviteUrl })
+        setShareStatus('shared')
+      } else {
+        await navigator.clipboard?.writeText(`${text}\n${inviteUrl}`)
+        setShareStatus('copied')
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') return
+      try {
+        await navigator.clipboard?.writeText(`${text}\n${inviteUrl}`)
+        setShareStatus('copied')
+      } catch {}
+    }
+    setTimeout(() => setShareStatus(''), 2200)
+  }
   function toggleReady() {
     const nextReady = !ready
     setReady(nextReady)
@@ -3328,7 +3375,13 @@ export default function PalermoClient() {
                 ← {lang === 'el' ? (isHost ? 'ΚΛΕΙΣΙΜΟ LOBBY' : 'ΠΙΣΩ') : (isHost ? 'CLOSE LOBBY' : 'BACK')}
               </button>
               <button className="copyCode" onClick={() => navigator.clipboard?.writeText(roomCode)}>{t('copyCode')}</button>
+              <button className="inviteButton primary" onClick={shareRoomInvite}>
+                {shareStatus === 'copied' ? t('inviteCopied') : `↗ ${t('inviteFriends')}`}
+              </button>
             </div>
+          </div>
+          <div className="inviteHint">
+            <span>{lang === 'el' ? 'Μοιράσου τον σύνδεσμο — ο κωδικός του δωματίου συμπληρώνεται αυτόματα.' : 'Share the link — the room code is filled in automatically.'}</span>
           </div>
 
           <div className="lobbyGrid">
