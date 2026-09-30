@@ -1525,6 +1525,7 @@ export default function PalermoClient() {
     kamikazeUsedRef.current = new Set()
     setIsDead(false)
     setDayMessages([])
+    setDayText('')
     setSpectatorMessages([])
     setGameWinner('')
     setGameMvp('')
@@ -2005,6 +2006,7 @@ export default function PalermoClient() {
     setKamikazeUsed(false)
     kamikazeUsedRef.current = new Set()
     setDayMessages([])
+    setDayText('')
     setGameStartsAt(startsAt)
     setPhaseEndsAt(0)
     broadcast({ type: 'game-state', roster: publicRoster(roster) })
@@ -2993,6 +2995,11 @@ export default function PalermoClient() {
                 {!isDead && (
                   <div className="dayChatBox">
                     <div className="dayMessages">
+                      {dayMessages.length === 0 && (
+                        <div className="prototypeNotice">
+                          {lang === 'el' ? 'Δεν υπάρχουν μηνύματα ακόμα. Ξεκίνα τη συζήτηση.' : 'No messages yet. Start the discussion.'}
+                        </div>
+                      )}
                       {dayMessages.map(msg => <div key={msg.id}><strong>{msg.name}</strong><span>{msg.text}</span></div>)}
                     </div>
                     <form onSubmit={e => { e.preventDefault(); if (isHost) sendDayMessage(dayText); else { hostConnRef.current?.send({ type:'day-chat', text:dayText }); setDayText('') } }}>
