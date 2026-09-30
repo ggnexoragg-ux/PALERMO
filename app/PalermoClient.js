@@ -190,6 +190,8 @@ const TEXT = {
     spectatorFull: 'Spectator slots are full.',
     playerFull: 'Player slots are full.',
     joinFail: 'Could not join room.',
+    duplicateName: 'That name is already being used in this room.',
+    invalidRoomCode: 'Enter a valid 5-character room code.',
     lostHost: 'Connection to host was lost.',
     connectFail: 'Could not connect to that room code.',
     micDenied: 'Microphone permission was denied or unavailable.',
@@ -361,6 +363,8 @@ const TEXT = {
     spectatorFull: 'Οι θέσεις θεατών είναι γεμάτες.',
     playerFull: 'Οι θέσεις παικτών είναι γεμάτες.',
     joinFail: 'Δεν ήταν δυνατή η είσοδος στο δωμάτιο.',
+    duplicateName: 'Αυτό το όνομα χρησιμοποιείται ήδη σε αυτό το δωμάτιο.',
+    invalidRoomCode: 'Βάλε έναν έγκυρο κωδικό δωματίου 5 χαρακτήρων.',
     lostHost: 'Η σύνδεση με τον host χάθηκε.',
     connectFail: 'Δεν ήταν δυνατή η σύνδεση σε αυτόν τον κωδικό.',
     micDenied: 'Η άδεια μικροφώνου απορρίφθηκε ή δεν είναι διαθέσιμη.',
@@ -426,6 +430,10 @@ function randomCode() {
   return Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
 }
 
+function normalizePlayerName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 18)
+}
+
 function shuffle(items) {
   const copy = [...items]
   for (let i = copy.length - 1; i > 0; i--) {
@@ -476,7 +484,7 @@ export default function PalermoClient() {
   const [myRole, setMyRole] = useState(null)
   const [phase, setPhase] = useState('night')
   const [round, setRound] = useState(1)
-  const [discussion, setDiscussion] = useState(180)
+  const [discussion, setDiscussion] = useState(120)
   const [vote, setVote] = useState('')
   const [voteLocked, setVoteLocked] = useState(false)
   const [micState, setMicState] = useState('idle')
@@ -1307,7 +1315,7 @@ export default function PalermoClient() {
         await writeRoomRegistry({
           room_code: roomCode,
           room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0, 40),
-          host_name: name.trim().slice(0,18),
+          host_name: cleanName,
           language: lang,
           access_mode: accessMode,
           player_count: players.length,
@@ -1991,6 +1999,17 @@ export default function PalermoClient() {
   }
 
   function admitGuest(conn, data) {
+    const cleanName = normalizePlayerName(data.name) || 'Player'
+    const incomingKey = String(data.clientKey || conn.peer)
+    const duplicateName = [...playersRef.current, ...spectatorsRef.current].some(person =>
+      person.clientKey !== incomingKey &&
+      normalizePlayerName(person.name).toLocaleLowerCase() === cleanName.toLocaleLowerCase()
+    )
+    if (duplicateName) {
+      conn.send({ type: 'join-error', message: t('duplicateName') })
+      return
+    }
+
     const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
     if (matchRunning && data.mode !== 'spectator') {
       conn.send({
@@ -2004,7 +2023,7 @@ export default function PalermoClient() {
 
     const entry = {
       id: conn.peer,
-      name: String(data.name || 'Player').slice(0, 18),
+      name: cleanName,
       avatarUrl: String(data.avatarUrl || ''),
       clientKey: String(data.clientKey || conn.peer),
       connected: true,
@@ -2063,6 +2082,8 @@ export default function PalermoClient() {
 
   function resetMatchStateForLobby() {
     setMyRole(null)
+    myRoleRef.current = null
+    privateRolesRef.current.clear()
     matchResultRecordedRef.current = false
     setPhase('night')
     phaseRef.current = 'night'
@@ -2101,6 +2122,7 @@ export default function PalermoClient() {
     setReady(false)
     setGameRoster([])
     gameRosterRef.current = []
+    privateRolesRef.current.clear()
     setTimeout(updateVoiceGate, 0)
   }
 
@@ -2120,6 +2142,7 @@ export default function PalermoClient() {
           maxPlayers,
           maxSpectators,
           roles,
+          roleMode,
         })
       }, 0)
       return next
@@ -2296,7 +2319,9 @@ export default function PalermoClient() {
   }
 
   function createRoom() {
-    if (!name.trim()) return
+    const cleanName = normalizePlayerName(name)
+    if (!cleanName) return
+    if (cleanName !== name) setName(cleanName)
     const Peer = getPeer()
     if (!Peer) {
       setConnectionError(t('multiplayerLoading'))
@@ -2315,7 +2340,7 @@ export default function PalermoClient() {
     peerRef.current = peer
 
     peer.on('open', id => {
-      const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, clientKey: clientKeyRef.current || id, connected: true, ready: false, isHost: true }
+      const hostPlayer = { id, name: cleanName, avatarUrl, clientKey: clientKeyRef.current || id, connected: true, ready: false, isHost: true }
       writeRoomRegistry({
         room_code: code,
         room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
@@ -2433,6 +2458,7 @@ export default function PalermoClient() {
           setRoleMode(data.roleMode === 'custom' ? 'custom' : 'auto')
         }
         if (data.type === 'join-error') {
+          reconnectingRef.current = false
           setJoinPending(false)
           setConnectionError(data.message || t('joinFail'))
           setConnectionState('error')
@@ -2528,7 +2554,10 @@ export default function PalermoClient() {
         if (data.type === 'game-over') {
           setGameWinner(data.winner || '')
           setGameMvp(data.mvp || '')
-          if (Array.isArray(data.roster)) setGameRoster(data.roster)
+          if (Array.isArray(data.roster)) {
+            gameRosterRef.current = data.roster
+            setGameRoster(data.roster)
+          }
           recordMatchResult(data.winner || '', data.mvp || '')
           setScreen('gameOver')
         }
@@ -2545,6 +2574,9 @@ export default function PalermoClient() {
           setMaxPlayers(data.maxPlayers ?? maxPlayers)
           setMaxSpectators(data.maxSpectators ?? maxSpectators)
           setRoles(data.roles || roles)
+          setRoleMode(data.roleMode === 'custom' ? 'custom' : roleMode)
+          playersRef.current = (data.players || []).map(p => ({ ...p, ready: false }))
+          spectatorsRef.current = data.spectators || []
           setConnectionError(t('playerLeftAbort'))
           setConnectionState('connected')
           setScreen('lobby')
@@ -2683,7 +2715,9 @@ export default function PalermoClient() {
   }
 
   function joinRoom() {
-    if (!name.trim() || !joinCode.trim()) return
+    const cleanName = normalizePlayerName(name)
+    if (!cleanName || !joinCode.trim()) return
+    if (cleanName !== name) setName(cleanName)
     const Peer = getPeer()
     if (!Peer) {
       setConnectionError('Multiplayer is still loading. Try again in a second.')
@@ -2691,6 +2725,11 @@ export default function PalermoClient() {
     }
 
     const code = joinCode.trim().toUpperCase()
+    if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}$/.test(code)) {
+      setConnectionState('error')
+      setConnectionError(t('invalidRoomCode'))
+      return
+    }
     reconnectRoomRef.current = code
     setRoomCode(code)
     setIsHost(false)
@@ -2706,7 +2745,7 @@ export default function PalermoClient() {
       hostConnRef.current = conn
 
       conn.on('open', () => {
-        conn.send({ type: 'join', name: name.trim(), avatarUrl, clientKey: clientKeyRef.current, mode: joinMode, accessCode: joinAccessCode })
+        conn.send({ type: 'join', name: cleanName, avatarUrl, clientKey: clientKeyRef.current, mode: joinMode, accessCode: joinAccessCode })
         setJoinPending(true)
         setConnectionState('waiting')
       })
@@ -2722,9 +2761,15 @@ export default function PalermoClient() {
       })
 
       conn.on('error', () => {
+        setJoinPending(false)
         setConnectionState('error')
         setConnectionError(t('connectFail'))
       })
+    })
+    peer.on('error', () => {
+      setJoinPending(false)
+      setConnectionState('error')
+      setConnectionError(t('connectFail'))
     })
   }
 
@@ -2824,15 +2869,17 @@ export default function PalermoClient() {
   }
 
   function changeMaxPlayers(value) {
-    const next = Number(value)
+    if (!isHost) return
+    const next = Math.max(playersRef.current.length, 2, Math.min(16, Number(value) || 2))
     setMaxPlayers(next)
-    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers: next, maxSpectators, roles, roleMode }), 0)
+    setTimeout(() => broadcast({ type:'room-state', players: playersRef.current, spectators: spectatorsRef.current, maxPlayers: next, maxSpectators, roles, roleMode }), 0)
   }
 
   function changeMaxSpectators(value) {
-    const next = Number(value)
+    if (!isHost) return
+    const next = Math.max(spectatorsRef.current.length, 0, Math.min(10, Number(value) || 0))
     setMaxSpectators(next)
-    setTimeout(() => broadcast({ type:'room-state', players, spectators, maxPlayers, maxSpectators: next, roles, roleMode }), 0)
+    setTimeout(() => broadcast({ type:'room-state', players: playersRef.current, spectators: spectatorsRef.current, maxPlayers, maxSpectators: next, roles, roleMode }), 0)
   }
 
   function startGame() {
@@ -2842,7 +2889,7 @@ export default function PalermoClient() {
       .reduce((sum, role) => sum + role.count, 0)
     const loverSlots = roles.find(role => role.id === 'lover')?.count || 0
     const setupValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
-    if (!isHost || players.length < 2 || !players.every(p => p.ready) || !setupValid) return
+    if (!isHost || players.length < 2 || !players.every(p => p.connected !== false && p.ready) || !setupValid) return
 
     let pool = roles.flatMap(role => Array(role.count).fill(role))
     while (pool.length < players.length) pool.push(citizen)
@@ -2871,6 +2918,7 @@ export default function PalermoClient() {
     const revealAt = Date.now()
     const startsAt = revealAt + 5000
 
+    privateRolesRef.current.clear()
     setGameRoster(roster)
     gameRosterRef.current = roster
     setPlayerVotes({})
@@ -3160,16 +3208,6 @@ export default function PalermoClient() {
     gameRosterRef.current = nextRoster
     broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
     sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
-    sendObserverState(nextRoster)
     broadcast({ type: 'kamikaze-result', kamikaze: actor.name, target: target.name })
     speak(`${actor.name} ${t('kamikazeBoom')} ${target.name}.`)
 
@@ -3261,6 +3299,7 @@ export default function PalermoClient() {
         setGameRoster(nextRoster)
         gameRosterRef.current = nextRoster
         broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+        sendObserverState(nextRoster)
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'vote' })
         loverChain.chained.forEach(partner => {
@@ -3318,6 +3357,7 @@ export default function PalermoClient() {
         setGameRoster(nextRoster)
         gameRosterRef.current = nextRoster
         broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+        sendObserverState(nextRoster)
         if (victim.id === peerRef.current?.id) setIsDead(true)
         else guestConnsRef.current.get(victim.id)?.send({ type: 'eliminated', reason: 'night' })
         loverChain.chained.forEach(partner => {
@@ -3373,8 +3413,11 @@ export default function PalermoClient() {
     setJoinCode('')
     registryTokenRef.current = ''
     setIsHost(false)
+    isHostRef.current = false
     setPlayers([])
+    playersRef.current = []
     setSpectators([])
+    spectatorsRef.current = []
     setRoleMode('auto')
     setRoles(DEFAULT_ROLES)
     setReady(false)
@@ -3395,6 +3438,7 @@ export default function PalermoClient() {
     setConnectionError('')
     setSessionTransitioning(false)
     setScreen('home')
+    screenRef.current = 'home'
   }
 
   function connectFreshSession(payload, oldPeerId) {
@@ -3568,7 +3612,7 @@ export default function PalermoClient() {
   const loverSlots = roles.find(role => role.id === 'lover')?.count || 0
   const citizenSlots = Math.max(0, players.length - configuredRoleSlots)
   const roleConfigValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
-  const allReady = players.length >= 2 && players.every(p => p.ready) && roleConfigValid
+  const allReady = players.length >= 2 && players.every(p => p.connected !== false && p.ready) && roleConfigValid
   const observerMode = isDead || joinMode === 'spectator'
 
   return (
@@ -3716,12 +3760,12 @@ export default function PalermoClient() {
 
               <div className="settingsRow">
                 <label>{t('maxPlayers')} <b>{maxPlayers}</b></label>
-                <input disabled={!isHost} type="range" min="4" max="16" value={maxPlayers} onChange={e => changeMaxPlayers(e.target.value)} />
+                <input disabled={!isHost} type="range" min={Math.max(2, players.length)} max="16" value={maxPlayers} onChange={e => changeMaxPlayers(e.target.value)} />
               </div>
 
               <div className="settingsRow">
                 <label>{t('maxSpectators')} <b>{maxSpectators}</b></label>
-                <input disabled={!isHost} type="range" min="0" max="10" value={maxSpectators} onChange={e => changeMaxSpectators(e.target.value)} />
+                <input disabled={!isHost} type="range" min={spectators.length} max="10" value={maxSpectators} onChange={e => changeMaxSpectators(e.target.value)} />
               </div>
 
               {isHost && pendingRequests.length > 0 && (
