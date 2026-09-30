@@ -491,6 +491,10 @@ export default function PalermoClient() {
   const [authStatus, setAuthStatus] = useState('idle')
   const [authMessage, setAuthMessage] = useState('')
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false)
+  const [leaderboardRows, setLeaderboardRows] = useState([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false)
+  const [leaderboardError, setLeaderboardError] = useState('')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -513,6 +517,9 @@ export default function PalermoClient() {
   const spectatorsRef = useRef([])
   const screenRef = useRef('language')
   const kamikazeUsedRef = useRef(new Set())
+  const myRoleRef = useRef(null)
+  const authSessionRef = useRef(null)
+  const matchResultRecordedRef = useRef(false)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
@@ -717,6 +724,61 @@ export default function PalermoClient() {
     }
   }
 
+  async function fetchLeaderboard() {
+    setLeaderboardLoading(true)
+    setLeaderboardError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?select=id,username,avatar_url,games_played,wins,losses,mvps&games_played=gt.0&order=wins.desc,mvps.desc,games_played.asc&limit=100`, {
+        headers: REGISTRY_HEADERS,
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error('leaderboard_failed')
+      const rows = await res.json()
+      setLeaderboardRows(Array.isArray(rows) ? rows : [])
+    } catch {
+      setLeaderboardRows([])
+      setLeaderboardError(lang === 'el' ? 'Δεν ήταν δυνατή η φόρτωση του leaderboard.' : 'Could not load the leaderboard.')
+    } finally {
+      setLeaderboardLoading(false)
+    }
+  }
+
+  function openLeaderboard() {
+    setLeaderboardOpen(true)
+    fetchLeaderboard()
+  }
+
+  function didRoleWin(winner, roleId) {
+    if (!winner || !roleId) return false
+    if (winner === 'madness') return roleId === 'madness'
+    if (winner === 'killers') return roleId === 'visibleKiller' || roleId === 'hiddenKiller'
+    if (winner === 'citizens') return roleId !== 'visibleKiller' && roleId !== 'hiddenKiller' && roleId !== 'madness'
+    return false
+  }
+
+  async function recordMatchResult(winner, mvpName) {
+    const session = authSessionRef.current
+    const roleId = myRoleRef.current?.id
+    if (!session?.access_token || !roleId || matchResultRecordedRef.current) return
+    matchResultRecordedRef.current = true
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_record_match_result`, {
+        method: 'POST',
+        headers: authHeaders(session.access_token),
+        body: JSON.stringify({
+          p_won: didRoleWin(winner, roleId),
+          p_mvp: !!mvpName && String(mvpName) === String(name),
+        }),
+      })
+      if (!res.ok) throw new Error('stats_update_failed')
+      const data = await res.json()
+      const updated = Array.isArray(data) ? data[0] : data
+      if (updated?.id) setProfile(updated)
+    } catch {
+      matchResultRecordedRef.current = false
+    }
+  }
+
   function startMenuMusic() {
     if (!menuMusicOn || typeof window === 'undefined' || menuAudioRef.current) return
     try {
@@ -792,6 +854,8 @@ export default function PalermoClient() {
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { spectatorsRef.current = spectators }, [spectators])
   useEffect(() => { screenRef.current = screen }, [screen])
+  useEffect(() => { myRoleRef.current = myRole }, [myRole])
+  useEffect(() => { authSessionRef.current = authSession }, [authSession])
   useEffect(() => { restoreAuth() }, [])
 
   useEffect(() => {
@@ -1138,6 +1202,7 @@ export default function PalermoClient() {
 
   function resetMatchStateForLobby() {
     setMyRole(null)
+    matchResultRecordedRef.current = false
     setPhase('night')
     phaseRef.current = 'night'
     setRound(1)
@@ -1455,6 +1520,7 @@ export default function PalermoClient() {
           setGameWinner(data.winner || '')
           setGameMvp(data.mvp || '')
           if (Array.isArray(data.roster)) setGameRoster(data.roster)
+          recordMatchResult(data.winner || '', data.mvp || '')
           setScreen('gameOver')
         }
         if (data.type === 'session-transition') {
@@ -1594,6 +1660,7 @@ export default function PalermoClient() {
         setIsDead(false)
         setGameWinner('')
         setGameMvp('')
+        matchResultRecordedRef.current = false
         setKamikazeUsed(false)
         kamikazeUsedRef.current = new Set()
         setDayMessages([])
@@ -1724,6 +1791,7 @@ export default function PalermoClient() {
     const mvp = roster.find(p => p.id === mvpId)?.name || ''
     setGameWinner(winner)
     setGameMvp(mvp)
+    recordMatchResult(winner, mvp)
     setScreen('gameOver')
     retireRoomRegistry(roomCode, registryTokenRef.current).catch(() => {})
     broadcast({ type: 'game-over', winner, mvp, roster })
@@ -2167,6 +2235,7 @@ export default function PalermoClient() {
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {screen !== 'language' && <button onClick={() => setScreen('language')} style={{padding:'8px 10px'}}>{lang === 'el' ? 'ΕΛ' : 'EN'}</button>}
           {screen !== 'language' && <button className="howToButton" onClick={() => setHowToOpen(true)}>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</button>}
+          {screen !== 'language' && <button className="leaderboardButton" onClick={openLeaderboard}>{lang === 'el' ? 'ΚΑΤΑΤΑΞΗ' : 'LEADERBOARD'}</button>}
           {screen !== 'language' && (
             <button className="accountButton" onClick={() => { setAuthMessage(''); setProfileNameDraft(profile?.username || ''); setAuthOpen(true) }}>
               {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile?.username?.[0]?.toUpperCase() || '👤'}</span>}
@@ -2620,6 +2689,53 @@ export default function PalermoClient() {
             )}
           </div>
         </section>
+      )}
+
+      {leaderboardOpen && (
+        <div className="leaderboardBackdrop" onClick={() => setLeaderboardOpen(false)}>
+          <div className="leaderboardModal card" onClick={e => e.stopPropagation()}>
+            <div className="leaderboardHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // RANKINGS</div>
+                <h2>{lang === 'el' ? 'ΚΑΤΑΤΑΞΗ' : 'LEADERBOARD'}</h2>
+                <p>{lang === 'el' ? 'Οι κατατάξεις μετράνε μόνο παιχνίδια από συνδεδεμένους λογαριασμούς.' : 'Rankings count completed matches from signed-in accounts only.'}</p>
+              </div>
+              <button className="bugClose" onClick={() => setLeaderboardOpen(false)}>×</button>
+            </div>
+
+            <div className="leaderboardLegend">
+              <span>#</span><span>{lang === 'el' ? 'ΠΑΙΚΤΗΣ' : 'PLAYER'}</span><span>{lang === 'el' ? 'ΝΙΚΕΣ' : 'WINS'}</span><span>MVP</span><span>{lang === 'el' ? 'ΠΑΙΧΝΙΔΙΑ' : 'GAMES'}</span><span>WIN %</span>
+            </div>
+
+            <div className="leaderboardList">
+              {leaderboardLoading && <div className="leaderboardEmpty">{lang === 'el' ? 'ΦΟΡΤΩΣΗ...' : 'LOADING...'}</div>}
+              {!leaderboardLoading && leaderboardError && <div className="errorText">{leaderboardError}</div>}
+              {!leaderboardLoading && !leaderboardError && leaderboardRows.length === 0 && (
+                <div className="leaderboardEmpty">{lang === 'el' ? 'Δεν υπάρχουν ranked παιχνίδια ακόμα.' : 'No ranked matches yet.'}</div>
+              )}
+              {!leaderboardLoading && leaderboardRows.map((row, index) => {
+                const rate = row.games_played > 0 ? Math.round((row.wins / row.games_played) * 100) : 0
+                return (
+                  <div className={`leaderboardRow ${profile?.id === row.id ? 'isMe' : ''}`} key={row.id}>
+                    <b className="leaderboardRank">{index + 1}</b>
+                    <div className="leaderboardPlayer">
+                      <span className="leaderboardAvatar">{row.avatar_url ? <img src={row.avatar_url} alt="" /> : row.username?.[0]?.toUpperCase()}</span>
+                      <strong>{row.username}{profile?.id === row.id ? (lang === 'el' ? ' (ΕΣΥ)' : ' (YOU)') : ''}</strong>
+                    </div>
+                    <b>{row.wins || 0}</b>
+                    <b>{row.mvps || 0}</b>
+                    <span>{row.games_played || 0}</span>
+                    <span>{rate}%</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <button className="wide" onClick={fetchLeaderboard} disabled={leaderboardLoading}>
+              {lang === 'el' ? 'ΑΝΑΝΕΩΣΗ' : 'REFRESH'}
+            </button>
+          </div>
+        </div>
       )}
 
       {authOpen && (
