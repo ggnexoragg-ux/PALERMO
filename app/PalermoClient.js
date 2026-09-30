@@ -2619,6 +2619,32 @@ export default function PalermoClient() {
           </div>
 
           <div className="gameGrid">
+            <aside className="card playerBoard">
+              <div className="cardTitle">
+                <span>{lang === 'el' ? 'ΠΑΙΚΤΕΣ' : 'PLAYERS'}</span>
+                <b>{gameRoster.filter(p => p.alive).length}/{gameRoster.length} {lang === 'el' ? 'ΖΩΝΤΑΝΟΙ' : 'ALIVE'}</b>
+              </div>
+              <div className="playerBoardList">
+                {gameRoster.map((player, index) => (
+                  <div className={`playerBoardRow ${player.alive ? 'alive' : 'dead'}`} key={player.id || index}>
+                    <span className="playerBoardAvatar">
+                      {(() => {
+                        const source = players.find(p => p.id === player.id)
+                        return source?.avatarUrl
+                          ? <img src={source.avatarUrl} alt="" />
+                          : (player.name?.[0]?.toUpperCase() || '?')
+                      })()}
+                    </span>
+                    <div className="playerBoardMeta">
+                      <strong>{player.name}</strong>
+                      <small>{player.alive ? (lang === 'el' ? 'ΖΩΝΤΑΝΟΣ' : 'ALIVE') : (lang === 'el' ? 'ΝΕΚΡΟΣ' : 'DEAD')}</small>
+                    </div>
+                    <span className={`playerStatusDot ${player.alive ? 'alive' : 'dead'}`} />
+                  </div>
+                ))}
+              </div>
+            </aside>
+
             <div className="card phaseCard">
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
