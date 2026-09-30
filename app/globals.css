@@ -42,13 +42,38 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
 .profileStats>div{display:grid;gap:4px;text-align:center;padding:12px;border:1px solid #2e263b;border-radius:12px;background:#0d0a12}
 .profileStats b{font-size:22px;color:#efe8ff}
 .profileStats span{font-size:9px;letter-spacing:.12em;color:#978baa}
+
+.profileStats{grid-template-columns:repeat(5,minmax(0,1fr))}
+.matchHistoryBlock{margin-top:8px;padding-top:14px;border-top:1px solid #2b2438;display:grid;gap:10px}
+.matchHistoryHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.matchHistoryHead>div{display:grid;gap:2px}
+.matchHistoryHead small{font-size:9px;font-weight:900;letter-spacing:.14em;color:#766d84}
+.matchHistoryHead strong{font-size:14px;color:#eee6f8}
+.matchHistoryHead button{padding:7px 9px!important;font-size:9px!important}
+.matchHistoryList{display:grid;gap:8px}
+.matchHistoryRow{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid #2e263b;border-radius:12px;background:#0d0a12}
+.matchHistoryRow.won{border-color:#28513b}
+.matchHistoryRow.lost{border-color:#4a2b35}
+.matchHistoryResult{display:grid;gap:3px}
+.matchHistoryResult b{font-size:12px;letter-spacing:.08em}
+.matchHistoryRow.won .matchHistoryResult b{color:#8ff1b9}
+.matchHistoryRow.lost .matchHistoryResult b{color:#ef9aac}
+.matchHistoryResult small{font-size:9px;color:#81778d}
+.matchHistoryRole{display:grid;gap:3px;min-width:0}
+.matchHistoryRole strong{font-size:12px;color:#eee7f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.matchHistoryRole span{font-size:9px;color:#8e839a}
+.matchHistoryBadges{display:flex;align-items:flex-end;gap:5px;flex-direction:column}
+.matchHistoryBadges span{font-size:9px;font-weight:900;letter-spacing:.08em;padding:4px 6px;border-radius:999px;background:#332550;color:#d9c3ff}
+.matchHistoryBadges small{font-size:8px;color:#81778d;letter-spacing:.08em}
+.matchHistoryEmpty{padding:18px 12px;text-align:center;border:1px dashed #30273d;border-radius:12px;color:#8f849d;font-size:11px}
 .authActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
 @media(max-width:700px){
   .palermoTop>div:last-child{flex-wrap:wrap;justify-content:flex-end}
   .accountButton{max-width:150px}
   .accountButton b{max-width:80px}
   .authBackdrop{padding:10px}.authModal{padding:18px}
-  .profileHero{align-items:flex-start}.profileStats{grid-template-columns:1fr 1fr 1fr}
+  .profileHero{align-items:flex-start}.profileStats{grid-template-columns:1fr 1fr}
+  .matchHistoryRow{grid-template-columns:64px minmax(0,1fr)}.matchHistoryBadges{grid-column:2;flex-direction:row;align-items:center;justify-content:flex-start}
 }
 
 .leaderboardButton{padding:8px 11px!important;font-size:10px!important;letter-spacing:.1em!important;background:#12151f!important;border-color:#34405c!important;color:#c7d5f2!important}
