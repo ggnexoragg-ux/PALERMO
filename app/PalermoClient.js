@@ -8,6 +8,7 @@ const DEFAULT_ROLES = [
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
+  { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
   { id: 'madness', label: 'Madness', emoji: '🌀', count: 0, min: 0 },
 ]
 
@@ -167,7 +168,7 @@ const TEXT = {
     roleDetective: 'You know who the revealed killer is. Use that information carefully without exposing yourself.',
     roleDoctor: 'Protect one player each night.',
     roleLover: 'You are linked to another Lover. If either of you dies, the other dies too.',
-    roleKamikaze: 'Your elimination can trigger a dangerous consequence.',
+    roleKamikaze: 'You are on the evil side. Once during the day, you may detonate on one non-killer player. You and that player both die.',
     roleMadness: 'Your win condition does not follow the ordinary rules.',
     roleCitizen: 'Find the killers, survive, and vote carefully.',
     multiplayerLoading: 'Multiplayer is still loading. Try again in a second.',
@@ -225,6 +226,10 @@ const TEXT = {
     nightSafe: 'No one died during the night.',
     playerLeftAbort: 'A player left. The match was cancelled and everyone returned to the lobby.',
     hostLeftAbort: 'The host left. The match was closed.',
+    kamikazeAction: 'KAMIKAZE',
+    kamikazeChoose: 'Choose one player to take down with you. This can only be used once during the day.',
+    kamikazeUsed: 'BOMB USED',
+    kamikazeBoom: 'detonated and took down',
     music: 'MENU MUSIC',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -390,6 +395,10 @@ const TEXT = {
     nightSafe: 'Κανένας δεν πέθανε κατά τη διάρκεια της νύχτας.',
     playerLeftAbort: 'Ένας παίκτης αποχώρησε. Το παιχνίδι ακυρώθηκε και όλοι επέστρεψαν στο lobby.',
     hostLeftAbort: 'Ο host αποχώρησε. Το παιχνίδι έκλεισε.',
+    kamikazeAction: 'ΚΑΜΙΚΑΖΙ',
+    kamikazeChoose: 'Διάλεξε έναν παίκτη να πάρεις μαζί σου. Μπορεί να χρησιμοποιηθεί μόνο μία φορά μέσα στη μέρα.',
+    kamikazeUsed: 'Η ΒΟΜΒΑ ΧΡΗΣΙΜΟΠΟΙΗΘΗΚΕ',
+    kamikazeBoom: 'ανατινάχτηκε και πήρε μαζί του τον/την',
     music: 'ΜΟΥΣΙΚΗ MENU',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -469,6 +478,7 @@ export default function PalermoClient() {
   const [dayMessages, setDayMessages] = useState([])
   const [dayText, setDayText] = useState('')
   const [menuMusicOn, setMenuMusicOn] = useState(true)
+  const [kamikazeUsed, setKamikazeUsed] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -485,6 +495,7 @@ export default function PalermoClient() {
   const phaseRef = useRef('night')
   const spectatorsRef = useRef([])
   const screenRef = useRef('language')
+  const kamikazeUsedRef = useRef(new Set())
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
@@ -794,6 +805,8 @@ export default function PalermoClient() {
     setKillerVote('')
     setNightResolvedTarget('')
     setNightSaved(false)
+    setKamikazeUsed(false)
+    kamikazeUsedRef.current = new Set()
     setIsDead(false)
     setDayMessages([])
     setSpectatorMessages([])
@@ -910,6 +923,10 @@ export default function PalermoClient() {
 
       if (data.type === 'day-chat') {
         sendDayMessage(String(data.text || ''), conn.peer)
+      }
+
+      if (data.type === 'kamikaze-action') {
+        resolveKamikazeAction(conn.peer, String(data.target || ''))
       }
 
       if (data.type === 'ready') {
@@ -1068,6 +1085,12 @@ export default function PalermoClient() {
         if (data.type === 'day-chat') {
           setDayMessages(current => [...current.slice(-79), data.message])
         }
+        if (data.type === 'kamikaze-used') {
+          setKamikazeUsed(true)
+        }
+        if (data.type === 'kamikaze-result') {
+          speak(`${data.kamikaze} ${t('kamikazeBoom')} ${data.target}.`)
+        }
         if (data.type === 'vote-result') {
           if (data.name && data.roleLabel) {
             speak(`${data.name} ${t('eliminated')} ${data.roleLabel}.`)
@@ -1217,6 +1240,8 @@ export default function PalermoClient() {
         setIsDead(false)
         setGameWinner('')
         setGameMvp('')
+        setKamikazeUsed(false)
+        kamikazeUsedRef.current = new Set()
         setDayMessages([])
         setVoteTimer(30)
         broadcast({ type: 'game-state', roster: publicRoster(roster) })
@@ -1391,6 +1416,51 @@ export default function PalermoClient() {
       if (conn?.open && (deadPeer || spectatorPeer)) conn.send({ type: 'spectator-chat', message })
     })
     setSpectatorText('')
+  }
+
+  function resolveKamikazeAction(actorId, targetName) {
+    if (!isHost || phaseRef.current !== 'day' || !targetName) return
+    const rosterNow = gameRosterRef.current
+    const actor = rosterNow.find(p => p.id === actorId)
+    const target = rosterNow.find(p => p.name === targetName && p.alive)
+    if (!actor?.alive || actor.roleId !== 'kamikaze' || !target) return
+    if (kamikazeUsedRef.current.has(actorId)) return
+    if (target.id === actorId) return
+    if (target.roleId === 'visibleKiller' || target.roleId === 'hiddenKiller') return
+
+    kamikazeUsedRef.current.add(actorId)
+    if (actorId === peerRef.current?.id) setKamikazeUsed(true)
+    else guestConnsRef.current.get(actorId)?.send({ type: 'kamikaze-used' })
+
+    let nextRoster = rosterNow.map(p =>
+      p.id === actor.id || p.id === target.id ? { ...p, alive: false } : p
+    )
+
+    const loverChain = applyLoverChain(nextRoster, target)
+    nextRoster = loverChain.roster
+
+    setGameRoster(nextRoster)
+    gameRosterRef.current = nextRoster
+    broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+    broadcast({ type: 'kamikaze-result', kamikaze: actor.name, target: target.name })
+    speak(`${actor.name} ${t('kamikazeBoom')} ${target.name}.`)
+
+    const eliminated = [actor, target, ...loverChain.chained]
+    const unique = [...new Map(eliminated.map(p => [p.id, p])).values()]
+    unique.forEach(player => {
+      if (player.id === peerRef.current?.id) setIsDead(true)
+      else guestConnsRef.current.get(player.id)?.send({ type: 'eliminated', reason: player.id === actor.id ? 'kamikaze' : 'explosion' })
+    })
+
+    checkWin(nextRoster, '')
+  }
+
+  function triggerKamikaze(targetName) {
+    if (!targetName || isDead || kamikazeUsed || phase !== 'day' || myRole?.id !== 'kamikaze') return
+    const myId = peerRef.current?.id
+    if (!myId) return
+    if (isHost) resolveKamikazeAction(myId, targetName)
+    else hostConnRef.current?.send({ type: 'kamikaze-action', target: targetName })
   }
 
   function sendDayMessage(rawText, senderId = peerRef.current?.id) {
@@ -2046,6 +2116,28 @@ export default function PalermoClient() {
                 <h3>{t('discussion')}</h3>
                 <div className="discussionTimer">{timerText}</div>
                 <p>{t('dayChatHint')}</p>
+                {!isDead && myRole?.id === 'kamikaze' && (
+                  <div className="kamikazePanel">
+                    <div className="cardTitle"><span>💣 {t('kamikazeAction')}</span><b>{kamikazeUsed ? t('kamikazeUsed') : '1×'}</b></div>
+                    <p>{t('kamikazeChoose')}</p>
+                    <div className="targetGrid">
+                      {gameRoster.filter(p =>
+                        p.alive &&
+                        p.name !== name &&
+                        p.roleId !== 'visibleKiller' &&
+                        p.roleId !== 'hiddenKiller'
+                      ).map(p => (
+                        <button
+                          key={p.id}
+                          disabled={kamikazeUsed}
+                          onClick={() => triggerKamikaze(p.name)}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {!isDead && (
                   <div className="dayChatBox">
                     <div className="dayMessages">
