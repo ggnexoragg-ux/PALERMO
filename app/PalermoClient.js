@@ -223,6 +223,8 @@ const TEXT = {
     noElimination: 'No player was eliminated.',
     nightDeath: 'did not survive the night.',
     nightSafe: 'No one died during the night.',
+    playerLeftAbort: 'A player left. The match was cancelled and everyone returned to the lobby.',
+    hostLeftAbort: 'The host left. The match was closed.',
     music: 'MENU MUSIC',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -386,6 +388,8 @@ const TEXT = {
     noElimination: 'Κανένας παίκτης δεν αποχώρησε.',
     nightDeath: 'δεν επέζησε από τη νύχτα.',
     nightSafe: 'Κανένας δεν πέθανε κατά τη διάρκεια της νύχτας.',
+    playerLeftAbort: 'Ένας παίκτης αποχώρησε. Το παιχνίδι ακυρώθηκε και όλοι επέστρεψαν στο lobby.',
+    hostLeftAbort: 'Ο host αποχώρησε. Το παιχνίδι έκλεισε.',
     music: 'ΜΟΥΣΙΚΗ MENU',
     musicOn: 'ON',
     musicOff: 'OFF',
@@ -480,6 +484,7 @@ export default function PalermoClient() {
   const gameRosterRef = useRef([])
   const phaseRef = useRef('night')
   const spectatorsRef = useRef([])
+  const screenRef = useRef('language')
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const chooseLanguage = value => { setLang(value); setScreen('home'); if (menuMusicOn) startMenuMusic() }
@@ -555,6 +560,7 @@ export default function PalermoClient() {
   useEffect(() => { gameRosterRef.current = gameRoster }, [gameRoster])
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { spectatorsRef.current = spectators }, [spectators])
+  useEffect(() => { screenRef.current = screen }, [screen])
 
   useEffect(() => {
     const existing = document.querySelector('script[data-peerjs]')
@@ -771,6 +777,73 @@ export default function PalermoClient() {
     else pending.conn.send({ type: 'join-error', message: lang === 'el' ? 'Ο host απέρριψε το αίτημα.' : 'The host denied the request.' })
   }
 
+  function resetMatchStateForLobby() {
+    setMyRole(null)
+    setPhase('night')
+    phaseRef.current = 'night'
+    setRound(1)
+    setVote('')
+    setPlayerVotes({})
+    playerVotesRef.current = {}
+    setVoteScores({})
+    setKillerVotes({})
+    killerVotesRef.current = {}
+    setDoctorProtected('')
+    doctorProtectedRef.current = ''
+    setDoctorVote('')
+    setKillerVote('')
+    setNightResolvedTarget('')
+    setNightSaved(false)
+    setIsDead(false)
+    setDayMessages([])
+    setSpectatorMessages([])
+    setGameWinner('')
+    setGameMvp('')
+    setCountdown(null)
+    setDiscussion(120)
+    setVoteTimer(30)
+    setReady(false)
+    setGameRoster([])
+    gameRosterRef.current = []
+  }
+
+  function abortMatchToLobby(leaverPeerId = '') {
+    if (!isHost) return
+    resetMatchStateForLobby()
+    setPlayers(current => {
+      const next = current
+        .filter(p => p.id !== leaverPeerId)
+        .map(p => ({ ...p, ready: false }))
+      setTimeout(() => {
+        broadcast({
+          type: 'game-aborted',
+          reason: 'player-left',
+          players: next,
+          spectators: spectatorsRef.current,
+          maxPlayers,
+          maxSpectators,
+          roles,
+        })
+      }, 0)
+      return next
+    })
+    setScreen('lobby')
+    screenRef.current = 'lobby'
+    writeRoomRegistry({
+      room_code: roomCode,
+      room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
+      host_name: name.trim().slice(0,18),
+      language: lang,
+      access_mode: accessMode,
+      player_count: Math.max(1, players.length - (leaverPeerId ? 1 : 0)),
+      max_players: maxPlayers,
+      spectator_count: spectatorsRef.current.length,
+      max_spectators: maxSpectators,
+      narrator_enabled: narratorOn,
+      started: false,
+    }, registryTokenRef.current, true).catch(() => {})
+  }
+
   function setupHostConnection(conn) {
     guestConnsRef.current.set(conn.peer, conn)
 
@@ -849,16 +922,26 @@ export default function PalermoClient() {
     })
 
     conn.on('close', () => {
+      const wasActivePlayer = gameRosterRef.current.some(p => p.id === conn.peer)
+      const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
+
       guestConnsRef.current.delete(conn.peer)
       pendingJoinConnsRef.current.delete(conn.peer)
       setPendingRequests(current => current.filter(r => r.peerId !== conn.peer))
+
+      if (matchRunning && wasActivePlayer) {
+        abortMatchToLobby(conn.peer)
+        return
+      }
+
       setPlayers(current => {
         const next = current.filter(p => p.id !== conn.peer)
-        setTimeout(() => broadcastState(next, spectators), 0)
+        setTimeout(() => broadcastState(next, spectatorsRef.current), 0)
         return next
       })
       setSpectators(current => {
         const next = current.filter(p => p.id !== conn.peer)
+        spectatorsRef.current = next
         setTimeout(() => broadcastState(players, next), 0)
         return next
       })
@@ -1004,6 +1087,18 @@ export default function PalermoClient() {
         if (data.type === 'return-browser') {
           leaveToBrowser(false)
         }
+        if (data.type === 'game-aborted') {
+          resetMatchStateForLobby()
+          setPlayers((data.players || []).map(p => ({ ...p, ready: false })))
+          setSpectators(data.spectators || [])
+          setMaxPlayers(data.maxPlayers ?? maxPlayers)
+          setMaxSpectators(data.maxSpectators ?? maxSpectators)
+          setRoles(data.roles || roles)
+          setConnectionError(t('playerLeftAbort'))
+          setConnectionState('connected')
+          setScreen('lobby')
+          screenRef.current = 'lobby'
+        }
         if (data.type === 'phase-change') {
           setPhase(data.phase || 'night')
           setRound(data.round || 1)
@@ -1013,6 +1108,22 @@ export default function PalermoClient() {
       })
 
       conn.on('close', () => {
+        const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
+        if (matchRunning) {
+          resetMatchStateForLobby()
+          peerRef.current?.destroy?.()
+          hostConnRef.current = null
+          setRoomCode('')
+          setJoinCode('')
+          setPlayers([])
+          setSpectators([])
+          setIsHost(false)
+          setConnectionState('idle')
+          setConnectionError(t('hostLeftAbort'))
+          setScreen('home')
+          screenRef.current = 'home'
+          return
+        }
         setConnectionState('error')
         setConnectionError(t('lostHost'))
       })
