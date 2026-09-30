@@ -572,6 +572,11 @@ export default function PalermoClient() {
   const gameStartsAtRef = useRef(0)
   const dayMessagesRef = useRef([])
   const spectatorMessagesRef = useRef([])
+  const isHostRef = useRef(false)
+  const hostBackupRef = useRef(null)
+  const hostMigrationRef = useRef(false)
+  const hostMigrationTimerRef = useRef(null)
+  const setupHostConnectionRef = useRef(null)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -614,7 +619,7 @@ export default function PalermoClient() {
   }
 
   function hostSchedulePhase(nextPhase, nextRound, durationSeconds) {
-    if (!isHost) return
+    if (!isHostRef.current) return
     const startsAt = Date.now()
     const endsAt = startsAt + durationSeconds * 1000
     applyPhaseSchedule(nextPhase, nextRound, startsAt, endsAt)
@@ -1030,6 +1035,8 @@ export default function PalermoClient() {
   useEffect(() => { screenRef.current = screen }, [screen])
   useEffect(() => { myRoleRef.current = myRole }, [myRole])
   useEffect(() => { authSessionRef.current = authSession }, [authSession])
+  useEffect(() => { isHostRef.current = isHost }, [isHost])
+  useEffect(() => { setupHostConnectionRef.current = setupHostConnection })
   useEffect(() => { roundRef.current = round }, [round])
   useEffect(() => { phaseEndsAtRef.current = phaseEndsAt }, [phaseEndsAt])
   useEffect(() => { gameStartsAtRef.current = gameStartsAt }, [gameStartsAt])
@@ -1136,6 +1143,13 @@ export default function PalermoClient() {
     }, 3000)
     return () => clearInterval(timer)
   }, [micState, screen, players.length])
+
+  useEffect(() => {
+    if (!isHost || !roomCode || !['lobby','role','game'].includes(screen)) return
+    sendHostBackupState()
+    const timer = setInterval(sendHostBackupState, 750)
+    return () => clearInterval(timer)
+  }, [isHost, roomCode, screen, roomName, accessMode, accessCode, maxPlayers, maxSpectators, roles, narratorOn, lang, voteScores, nightResolvedTarget, nightSaved, gameWinner, gameMvp])
 
   useEffect(() => {
     if (isHost || !['lobby','role','game'].includes(screen)) return
@@ -1515,6 +1529,230 @@ export default function PalermoClient() {
     })
   }
 
+  function migrationSuccessor(list = playersRef.current) {
+    return list.find(p => !p.isHost && p.connected !== false) || null
+  }
+
+  function buildHostBackupState() {
+    return {
+      roomCode,
+      registryToken: registryTokenRef.current,
+      sessionRejoinToken: sessionRejoinTokenRef.current,
+      hostClientKey: playersRef.current.find(p => p.isHost)?.clientKey || clientKeyRef.current,
+      players: playersRef.current,
+      spectators: spectatorsRef.current,
+      roomName,
+      accessMode,
+      accessCode,
+      maxPlayers,
+      maxSpectators,
+      roles,
+      narratorOn,
+      lang,
+      screen: screenRef.current,
+      phase: phaseRef.current,
+      round: roundRef.current,
+      phaseEndsAt: phaseEndsAtRef.current,
+      gameStartsAt: gameStartsAtRef.current,
+      roster: gameRosterRef.current,
+      privateRoles: Array.from(privateRolesRef.current.entries()),
+      playerVotes: playerVotesRef.current,
+      killerVotes: killerVotesRef.current,
+      doctorProtected: doctorProtectedRef.current,
+      voteScores,
+      dayMessages: dayMessagesRef.current,
+      spectatorMessages: spectatorMessagesRef.current,
+      kamikazeUsed: Array.from(kamikazeUsedRef.current),
+      nightResolvedTarget,
+      nightSaved,
+      gameWinner,
+      gameMvp,
+    }
+  }
+
+  function sendHostBackupState() {
+    if (!isHostRef.current) return
+    const successor = migrationSuccessor()
+    if (!successor?.id) return
+    const conn = guestConnsRef.current.get(successor.id)
+    if (conn?.open) conn.send({ type: 'host-backup-state', snapshot: buildHostBackupState() })
+  }
+
+  function restoreMigratedAuthority(snapshot, newHostPeerId) {
+    const selfKey = clientKeyRef.current
+    const oldSelfId = snapshot.players?.find(p => p.clientKey === selfKey)?.id
+    const oldHostKey = snapshot.hostClientKey
+
+    const nextPlayers = (snapshot.players || []).map(p => {
+      if (p.clientKey === selfKey) return { ...p, id: newHostPeerId, isHost: true, connected: true }
+      if (p.clientKey === oldHostKey) return { ...p, isHost: false, connected: false }
+      return { ...p, isHost: false }
+    })
+    playersRef.current = nextPlayers
+    setPlayers(nextPlayers)
+
+    const nextRoster = (snapshot.roster || []).map(p => {
+      if (p.clientKey === selfKey) return { ...p, id: newHostPeerId, connected: true }
+      if (p.clientKey === oldHostKey) return { ...p, connected: false }
+      return p
+    })
+    gameRosterRef.current = nextRoster
+    setGameRoster(nextRoster)
+
+    privateRolesRef.current = new Map(snapshot.privateRoles || [])
+    const ownRole = privateRolesRef.current.get(selfKey) || myRoleRef.current
+    setMyRole(ownRole || null)
+    myRoleRef.current = ownRole || null
+
+    playerVotesRef.current = transferMapKey(snapshot.playerVotes || {}, oldSelfId, newHostPeerId)
+    setPlayerVotes(playerVotesRef.current)
+    killerVotesRef.current = transferMapKey(snapshot.killerVotes || {}, oldSelfId, newHostPeerId)
+    setKillerVotes(killerVotesRef.current)
+    doctorProtectedRef.current = snapshot.doctorProtected || ''
+    setDoctorProtected(snapshot.doctorProtected || '')
+    setVoteScores(snapshot.voteScores || {})
+
+    const used = new Set(snapshot.kamikazeUsed || [])
+    if (oldSelfId && used.has(oldSelfId)) {
+      used.delete(oldSelfId)
+      used.add(newHostPeerId)
+    }
+    kamikazeUsedRef.current = used
+    setKamikazeUsed(used.has(newHostPeerId))
+
+    setDayMessages(snapshot.dayMessages || [])
+    setSpectatorMessages(snapshot.spectatorMessages || [])
+    setNightResolvedTarget(snapshot.nightResolvedTarget || '')
+    setNightSaved(!!snapshot.nightSaved)
+    setGameWinner(snapshot.gameWinner || '')
+    setGameMvp(snapshot.gameMvp || '')
+    setRoomName(snapshot.roomName ?? roomName)
+    setAccessMode(snapshot.accessMode ?? accessMode)
+    setAccessCode(snapshot.accessCode ?? accessCode)
+    setMaxPlayers(snapshot.maxPlayers ?? maxPlayers)
+    setMaxSpectators(snapshot.maxSpectators ?? maxSpectators)
+    setRoles(snapshot.roles || roles)
+    setNarratorOn(snapshot.narratorOn !== false)
+    setLang(snapshot.lang || lang)
+    registryTokenRef.current = snapshot.registryToken || registryTokenRef.current
+    sessionRejoinTokenRef.current = snapshot.sessionRejoinToken || sessionRejoinTokenRef.current
+
+    const nextScreen = snapshot.screen || 'lobby'
+    setScreen(nextScreen)
+    screenRef.current = nextScreen
+    setPhase(snapshot.phase || 'night')
+    phaseRef.current = snapshot.phase || 'night'
+    setRound(Number(snapshot.round || 1))
+    roundRef.current = Number(snapshot.round || 1)
+    setPhaseEndsAt(Number(snapshot.phaseEndsAt || 0))
+    phaseEndsAtRef.current = Number(snapshot.phaseEndsAt || 0)
+    setGameStartsAt(Number(snapshot.gameStartsAt || 0))
+    gameStartsAtRef.current = Number(snapshot.gameStartsAt || 0)
+    setIsDead(!!nextRoster.find(p => p.clientKey === selfKey && !p.alive))
+  }
+
+  function promoteToHost(code, snapshot) {
+    if (!code || !snapshot || isHostRef.current) return
+    hostMigrationRef.current = true
+    reconnectingRef.current = false
+    setConnectionState('connecting')
+    setConnectionError(lang === 'el' ? 'Ο host αποσυνδέθηκε. Αναλαμβάνεις το δωμάτιο...' : 'Host disconnected. You are taking over the room...')
+
+    try { hostConnRef.current?.close?.() } catch {}
+    hostConnRef.current = null
+    try { peerRef.current?.destroy?.() } catch {}
+
+    let attempts = 0
+    const openHost = () => {
+      attempts += 1
+      const peer = makePeer(roomPeerId(code))
+      if (!peer) {
+        if (attempts < 12) setTimeout(openHost, 400)
+        return
+      }
+      peerRef.current = peer
+      let opened = false
+
+      peer.on('open', id => {
+        opened = true
+        setIsHost(true)
+        isHostRef.current = true
+        setRoomCode(code)
+        reconnectRoomRef.current = code
+        guestConnsRef.current.clear()
+        restoreMigratedAuthority(snapshot, id)
+        peer.on('connection', conn => setupHostConnectionRef.current?.(conn))
+        setConnectionState('connected')
+        setConnectionError(lang === 'el' ? 'Είσαι ο νέος host. Το παιχνίδι συνεχίζεται.' : 'You are the new host. The game continues.')
+        hostMigrationRef.current = false
+
+        writeRoomRegistry({
+          room_code: code,
+          room_name: (snapshot.roomName || roomName || `${name.trim()}'s Room`).slice(0,40),
+          host_name: name.trim().slice(0,18),
+          language: snapshot.lang || lang,
+          access_mode: snapshot.accessMode || 'open',
+          player_count: (snapshot.players || []).length,
+          max_players: snapshot.maxPlayers ?? maxPlayers,
+          spectator_count: (snapshot.spectators || []).length,
+          max_spectators: snapshot.maxSpectators ?? maxSpectators,
+          narrator_enabled: snapshot.narratorOn !== false,
+          started: snapshot.screen === 'role' || snapshot.screen === 'game',
+        }, snapshot.registryToken || registryTokenRef.current, true).catch(() => {})
+
+        if (snapshot.screen === 'role') {
+          clearScheduledGameTimers()
+          const delay = Math.max(0, Number(snapshot.gameStartsAt || Date.now()) - Date.now())
+          scheduledGameRef.current = setTimeout(() => {
+            if (!isHostRef.current || screenRef.current !== 'role') return
+            const actualStartsAt = Date.now()
+            const firstNightEndsAt = actualStartsAt + 15000
+            setScreen('game')
+            screenRef.current = 'game'
+            applyPhaseSchedule('night', 1, actualStartsAt, firstNightEndsAt)
+            broadcast({ type: 'game-begin', phase: 'night', round: 1, startsAt: actualStartsAt, endsAt: firstNightEndsAt })
+          }, delay)
+        }
+      })
+
+      peer.on('error', err => {
+        try { peer.destroy?.() } catch {}
+        if (!opened && err?.type === 'unavailable-id' && attempts < 12) {
+          setTimeout(openHost, 500)
+          return
+        }
+        if (!opened) {
+          hostMigrationRef.current = false
+          setConnectionState('error')
+          setConnectionError(t('lostHost'))
+        }
+      })
+    }
+
+    setTimeout(openHost, 350)
+  }
+
+  function handleHostLoss(code) {
+    if (hostMigrationRef.current || isHostRef.current) return
+    const successor = migrationSuccessor()
+    const snapshot = hostBackupRef.current
+    closeAllVoice()
+
+    if (successor?.clientKey === clientKeyRef.current && snapshot?.roomCode === code) {
+      promoteToHost(code, snapshot)
+      return
+    }
+
+    hostMigrationRef.current = true
+    setConnectionState('connecting')
+    setConnectionError(lang === 'el' ? 'Ο host αποσυνδέθηκε. Μεταφορά host...' : 'Host disconnected. Migrating host...')
+    clearTimeout(hostMigrationTimerRef.current)
+    hostMigrationTimerRef.current = setTimeout(() => {
+      hostMigrationRef.current = false
+      attemptGuestReconnect(code)
+    }, 1400)
+  }
+
   function saveReconnectSession(code = reconnectRoomRef.current) {
     if (typeof window === 'undefined' || !code || !clientKeyRef.current) return
     localStorage.setItem('palermo-reconnect-v1', JSON.stringify({
@@ -1542,8 +1780,11 @@ export default function PalermoClient() {
   function reconnectGuest(conn, data) {
     const clientKey = String(data.clientKey || '')
     const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
-    const existing = gameRosterRef.current.find(p => p.clientKey === clientKey)
-    if (!matchRunning || !clientKey || !existing) {
+    const existingRoster = gameRosterRef.current.find(p => p.clientKey === clientKey)
+    const existingPlayer = playersRef.current.find(p => p.clientKey === clientKey)
+    const existingSpectator = spectatorsRef.current.find(p => p.clientKey === clientKey)
+    const existing = existingRoster || existingPlayer || existingSpectator
+    if (!clientKey || !existing) {
       conn.send({ type: 'join-error', message: t('joinFail') })
       return
     }
@@ -1555,6 +1796,41 @@ export default function PalermoClient() {
 
     guestConnsRef.current.delete(oldId)
     guestConnsRef.current.set(conn.peer, conn)
+
+    if (!matchRunning) {
+      if (existingPlayer) {
+        const nextPlayers = playersRef.current.map(p =>
+          p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
+        )
+        playersRef.current = nextPlayers
+        setPlayers(nextPlayers)
+        conn.send({
+          type: 'reconnect-approved',
+          screen: 'lobby',
+          players: nextPlayers,
+          spectators: spectatorsRef.current,
+          roster: [],
+        })
+        setTimeout(() => broadcastState(nextPlayers, spectatorsRef.current), 0)
+        return
+      }
+      if (existingSpectator) {
+        const nextSpectators = spectatorsRef.current.map(p =>
+          p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
+        )
+        spectatorsRef.current = nextSpectators
+        setSpectators(nextSpectators)
+        conn.send({
+          type: 'reconnect-approved',
+          screen: 'lobby',
+          players: playersRef.current,
+          spectators: nextSpectators,
+          roster: [],
+        })
+        setTimeout(() => broadcastState(playersRef.current, nextSpectators), 0)
+        return
+      }
+    }
 
     const nextRoster = gameRosterRef.current.map(p =>
       p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
@@ -1688,7 +1964,7 @@ export default function PalermoClient() {
   }
 
   function abortMatchToLobby(leaverPeerId = '') {
-    if (!isHost) return
+    if (!isHostRef.current) return
     resetMatchStateForLobby()
     setPlayers(current => {
       const next = current
@@ -1878,6 +2154,7 @@ export default function PalermoClient() {
     registryTokenRef.current = `${crypto.randomUUID()}${crypto.randomUUID()}`
     setRoomCode(code)
     setIsHost(true)
+    isHostRef.current = true
     setConnectionState('connecting')
     setConnectionError('')
 
@@ -1900,12 +2177,15 @@ export default function PalermoClient() {
         started: false,
       }, registryTokenRef.current, false).catch(() => {})
       setPlayers([hostPlayer])
+      playersRef.current = [hostPlayer]
       setSpectators([])
+      setIsHost(true)
+      isHostRef.current = true
       setConnectionState('connected')
       setScreen('lobby')
     })
 
-    peer.on('connection', setupHostConnection)
+    peer.on('connection', conn => setupHostConnectionRef.current?.(conn))
     peer.on('error', err => {
       setConnectionState('error')
       setConnectionError(err?.type === 'unavailable-id' ? t('roomCollision') : t('roomOpenFail'))
@@ -1914,6 +2194,10 @@ export default function PalermoClient() {
 
   function handleGuestData(data) {
         if (!data || typeof data !== 'object') return
+        if (data.type === 'host-backup-state') {
+          hostBackupRef.current = data.snapshot || null
+          return
+        }
         if (data.type === 'clock-sync-pong') {
           const receivedAt = Date.now()
           const sentAt = Number(data.clientSentAt || receivedAt)
@@ -1949,7 +2233,11 @@ export default function PalermoClient() {
           setVoteLocked(!!data.voteLocked)
           setVote(String(data.voteTarget || ''))
           setGameStartsAt(Number(data.gameStartsAt || 0))
-          if (data.screen === 'role' && Number(data.gameStartsAt || 0) > syncedHostNow()) {
+          if (data.screen === 'lobby') {
+            setReady(!!(data.players || []).find(p => p.clientKey === clientKeyRef.current)?.ready)
+            setScreen('lobby')
+            screenRef.current = 'lobby'
+          } else if (data.screen === 'role' && Number(data.gameStartsAt || 0) > syncedHostNow()) {
             setScreen('role')
             screenRef.current = 'role'
             setCountdown(Math.max(0, Math.ceil((Number(data.gameStartsAt) - syncedHostNow()) / 1000)))
@@ -2148,6 +2436,7 @@ export default function PalermoClient() {
     reconnectRoomRef.current = code
     setRoomCode(code)
     setIsHost(false)
+    isHostRef.current = false
     setConnectionState('connecting')
     setConnectionError('')
 
@@ -2166,12 +2455,8 @@ export default function PalermoClient() {
 
       conn.on('data', handleGuestData)
       conn.on('close', () => {
-        closeAllVoice()
-        const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
-        if (matchRunning) {
-          setConnectionState('connecting')
-          setConnectionError(lang === 'el' ? 'Η σύνδεση χάθηκε. Γίνεται επανασύνδεση...' : 'Connection lost. Reconnecting...')
-          setTimeout(() => attemptGuestReconnect(reconnectRoomRef.current || roomCode), 500)
+        if (['lobby','role','game'].includes(screenRef.current)) {
+          handleHostLoss(reconnectRoomRef.current || code)
           return
         }
         setConnectionState('error')
@@ -2424,7 +2709,7 @@ export default function PalermoClient() {
   }
 
   function finishMatch(winner, roster = gameRoster, scores = voteScores) {
-    if (!isHost) return
+    if (!isHostRef.current) return
     const scoreEntries = Object.entries(scores)
     const maxScore = scoreEntries.length ? Math.max(...scoreEntries.map(([, score]) => score)) : 0
     const mvpId = scoreEntries.find(([, score]) => score === maxScore && score > 0)?.[0]
@@ -2489,7 +2774,7 @@ export default function PalermoClient() {
   }
 
   function resolveKamikazeAction(actorId, targetName) {
-    if (!isHost || phaseRef.current !== 'day' || !targetName) return
+    if (!isHostRef.current || phaseRef.current !== 'day' || !targetName) return
     const rosterNow = gameRosterRef.current
     const actor = rosterNow.find(p => p.id === actorId)
     const target = rosterNow.find(p => p.name === targetName && p.alive)
@@ -2548,7 +2833,7 @@ export default function PalermoClient() {
   }
 
   function registerDayVote(voterId, target) {
-    if (!isHost || phaseRef.current !== 'vote' || !target) return false
+    if (!isHostRef.current || phaseRef.current !== 'vote' || !target) return false
     const rosterNow = gameRosterRef.current
     const voter = rosterNow.find(p => p.id === voterId)
     if (!voter?.alive) return false
@@ -2567,7 +2852,7 @@ export default function PalermoClient() {
   }
 
   function resolveDayVote(votesMap) {
-    if (!isHost) return
+    if (!isHostRef.current) return
     const rosterNow = gameRosterRef.current
     const counts = {}
     Object.values(votesMap).forEach(target => {
@@ -2624,7 +2909,7 @@ export default function PalermoClient() {
   }
 
   function resolveKillerVotes(currentKillerVotes = killerVotesRef.current, currentDoctorProtected = doctorProtectedRef.current) {
-    if (!isHost || phase !== 'night') return
+    if (!isHostRef.current || phaseRef.current !== 'night') return
     const values = Object.values(currentKillerVotes).filter(Boolean)
     let target = ''
     if (values.length === 1) target = values[0]
@@ -2665,8 +2950,8 @@ export default function PalermoClient() {
   }
 
   function nextPhase() {
-    if (!isHost) return
-    if (phase === 'night') {
+    if (!isHostRef.current) return
+    if (phaseRef.current === 'night') {
       resolveKillerVotes()
     } else {
       hostSchedulePhase('vote', round, 30)
@@ -2689,6 +2974,9 @@ export default function PalermoClient() {
   function leaveToBrowser(notify = true) {
     const oldCode = roomCode
     clearReconnectSession()
+    hostBackupRef.current = null
+    hostMigrationRef.current = false
+    clearTimeout(hostMigrationTimerRef.current)
     reconnectGraceTimersRef.current.forEach(timer => clearTimeout(timer))
     reconnectGraceTimersRef.current.clear()
     if (notify && isHost) broadcast({ type: 'return-browser' })
@@ -2774,7 +3062,7 @@ export default function PalermoClient() {
         setSessionTransitioning(false)
         setScreen('lobby')
       })
-      peer.on('connection', setupHostConnection)
+      peer.on('connection', conn => setupHostConnectionRef.current?.(conn))
       peer.on('error', () => {
         setConnectionState('error')
         setConnectionError(t('roomOpenFail'))
@@ -3566,7 +3854,7 @@ export default function PalermoClient() {
                 <li>{lang === 'el' ? 'Οι δολοφόνοι κερδίζουν αυτόματα όταν μείνουν ζωντανοί μαζί με μόνο έναν μη δολοφόνο.' : 'The killers automatically win when the only remaining non-killer count reaches one.'}</li>
                 <li>{lang === 'el' ? 'Η Τρέλα κερδίζει αμέσως αν ψηφιστεί εκτός παιχνιδιού.' : 'Madness immediately wins if voted out.'}</li>
                 <li>{lang === 'el' ? 'Οι νεκροί και οι θεατές έχουν δικό τους spectator text chat και δεν μπορούν να επηρεάσουν τους ζωντανούς.' : 'Dead players and spectators have their own spectator text chat and cannot participate with the living.'}</li>
-                <li>{lang === 'el' ? 'Αν ενεργός παίκτης χάσει τη σύνδεση, το Palermo του δίνει 20 δευτερόλεπτα να επανασυνδεθεί και επαναφέρει τον ίδιο ρόλο και την τρέχουσα φάση. Αν δεν επιστρέψει, το match ακυρώνεται.' : 'If an active player disconnects, Palermo gives them 20 seconds to reconnect and restores their role and current phase. If they do not return, the match is cancelled and everyone returns to the host lobby.'}</li>
+                <li>{lang === 'el' ? 'Αν ενεργός παίκτης χάσει τη σύνδεση, το Palermo του δίνει 20 δευτερόλεπτα να επανασυνδεθεί και επαναφέρει τον ίδιο ρόλο και την τρέχουσα φάση. Αν αποσυνδεθεί ο host, άλλος συνδεδεμένος παίκτης γίνεται αυτόματα host ώστε το δωμάτιο να συνεχίσει.' : 'If an active player disconnects, Palermo gives them 20 seconds to reconnect and restores their role and current phase. If the host disconnects, another connected player automatically becomes host so the room can continue.'}</li>
                 <li>{lang === 'el' ? 'Στο τέλος εμφανίζεται ο νικητής, οι ρόλοι και MVP βάσει των σωστών ψήφων στους δολοφόνους.' : 'At the end, the winner, all roles, and an MVP based on successful killer votes are shown.'}</li>
               </ul>
             </div>
