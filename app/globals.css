@@ -537,3 +537,731 @@ html,body{background:var(--palermo-bg)}
 @media(prefers-reduced-motion:reduce){
   .palermoNoise:before,.palermoNoise:after{animation:none!important}
 }
+
+
+/* =========================================================
+   FULL DETECTIVE / NOIR REDESIGN
+   Visual-only overhaul. Gameplay structure remains unchanged.
+   ========================================================= */
+:root{
+  --ink:#08090b;
+  --ink-2:#0d0e11;
+  --paper:#171617;
+  --paper-2:#111113;
+  --paper-warm:#1c1917;
+  --line:#3a3532;
+  --line-soft:#2a2726;
+  --ivory:#ece5d8;
+  --muted-ivory:#b7afa2;
+  --brass:#c0a06a;
+  --brass-dim:#786747;
+  --wine:#692b35;
+  --wine-hot:#a84b5c;
+  --night-blue:#30394e;
+  --evidence:#946f3f;
+}
+
+/* Scene */
+.noirBackdrop{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  overflow:hidden;
+  pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(4,5,7,.15),rgba(4,5,7,.78)),
+    radial-gradient(circle at 70% 14%,rgba(202,184,145,.08),transparent 20%),
+    linear-gradient(180deg,#11141a 0%,#090a0d 47%,#060709 100%);
+}
+.noirSkyline{
+  position:absolute;
+  left:-5%;
+  right:-5%;
+  bottom:0;
+  height:34vh;
+  opacity:.42;
+  filter:blur(.15px);
+  background:
+    linear-gradient(to top,rgba(0,0,0,.9),rgba(0,0,0,.9)) 0 100%/100% 19% no-repeat,
+    linear-gradient(to top,#050607,#050607) 2% 100%/7% 62% no-repeat,
+    linear-gradient(to top,#050607,#050607) 10% 100%/5% 43% no-repeat,
+    linear-gradient(to top,#050607,#050607) 17% 100%/9% 72% no-repeat,
+    linear-gradient(to top,#050607,#050607) 29% 100%/6% 51% no-repeat,
+    linear-gradient(to top,#050607,#050607) 37% 100%/11% 80% no-repeat,
+    linear-gradient(to top,#050607,#050607) 51% 100%/5% 56% no-repeat,
+    linear-gradient(to top,#050607,#050607) 58% 100%/9% 68% no-repeat,
+    linear-gradient(to top,#050607,#050607) 70% 100%/7% 47% no-repeat,
+    linear-gradient(to top,#050607,#050607) 79% 100%/12% 75% no-repeat,
+    linear-gradient(to top,#050607,#050607) 94% 100%/6% 58% no-repeat;
+}
+.noirSkyline:before{
+  content:"";
+  position:absolute;
+  inset:15% 0 0;
+  opacity:.18;
+  background:
+    repeating-linear-gradient(90deg,transparent 0 38px,rgba(214,190,141,.45) 39px 41px,transparent 42px 76px);
+  mask-image:linear-gradient(to top,#000,transparent 86%);
+}
+.noirRain{
+  position:absolute;
+  inset:-25%;
+  opacity:.12;
+  transform:rotate(10deg);
+  background:repeating-linear-gradient(90deg,transparent 0 12px,rgba(220,226,235,.34) 13px,transparent 14px 28px);
+  background-size:30px 100%;
+  animation:noirRainFall 1.25s linear infinite;
+}
+.noirBlinds{
+  position:absolute;
+  inset:0;
+  opacity:.11;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.55) 0 16px,transparent 17px 45px);
+  mask-image:linear-gradient(90deg,transparent 0,black 18%,black 82%,transparent 100%);
+}
+.noirLampGlow{
+  position:absolute;
+  width:min(680px,80vw);
+  height:min(680px,80vw);
+  right:-13vw;
+  top:-18vw;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(220,194,139,.13) 0,rgba(164,129,71,.06) 27%,transparent 64%);
+  filter:blur(6px);
+  animation:lampBreath 8s ease-in-out infinite;
+}
+.noirFog{
+  position:absolute;
+  width:75vw;
+  height:16vh;
+  border-radius:50%;
+  filter:blur(42px);
+  background:rgba(168,166,173,.055);
+}
+.fogOne{left:-20vw;bottom:18vh;animation:fogDrift 22s ease-in-out infinite alternate}
+.fogTwo{right:-22vw;bottom:5vh;animation:fogDriftTwo 27s ease-in-out infinite alternate}
+.palermoNoise{
+  background:
+    radial-gradient(circle at 10% 4%,rgba(158,129,91,.09),transparent 28%),
+    radial-gradient(circle at 88% 18%,rgba(112,43,54,.10),transparent 25%),
+    radial-gradient(circle at 50% 120%,rgba(39,45,61,.18),transparent 45%);
+}
+.palermoShell{
+  background:transparent;
+  color:var(--ivory);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+.palermoShell:before{
+  opacity:.14;
+  background-image:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px);
+  background-size:auto;
+  mask-image:none;
+}
+.palermoShell:after{box-shadow:inset 0 0 190px rgba(0,0,0,.82)}
+
+/* Header / identity */
+.palermoTop{
+  border-bottom:1px solid rgba(192,160,106,.16);
+  margin-bottom:28px;
+  padding:8px 0 22px;
+}
+.palermoBrand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  font-family:inherit;
+  text-shadow:none;
+}
+.brandSeal{
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  border:1px solid var(--brass-dim);
+  background:
+    radial-gradient(circle at 50% 45%,rgba(192,160,106,.13),transparent 45%),
+    #111113;
+  color:var(--brass);
+  font:800 20px/1 Georgia,"Times New Roman",serif;
+  box-shadow:0 0 0 3px rgba(192,160,106,.035),inset 0 0 0 3px #0c0d0f;
+}
+.brandCopy{display:grid;gap:1px}
+.brandCopy b{
+  font:800 15px/1 Georgia,"Times New Roman",serif;
+  letter-spacing:.19em;
+  color:#f1eadc;
+}
+.brandCopy small{
+  font:700 8px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.2em;
+  color:#8e8273;
+}
+.palermoBadge{
+  border-color:#4b4136;
+  background:linear-gradient(180deg,rgba(25,22,19,.83),rgba(14,14,15,.9));
+  color:#bcae98;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+/* Typography */
+.palermoHero h1,.lobbyHead h2,.joinCard h2,.roleReveal h2,.gameTop h2{
+  font-family:Georgia,"Times New Roman",serif;
+  color:#f0e9dd;
+  letter-spacing:-.045em;
+}
+.palermoHero h1 span,.lobbyHead h2 span{color:var(--brass)}
+.palermoEyebrow{
+  color:#a99a84;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.22em;
+  text-shadow:none;
+}
+.caseKicker{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0 0 12px;
+  font:700 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+}
+.caseKicker span{
+  padding:6px 8px;
+  border:1px solid #584a38;
+  color:var(--brass);
+  background:#12110f;
+}
+.caseKicker i{
+  font-style:normal;
+  color:#8d8172;
+}
+.noirTagline{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  width:max-content;
+  max-width:100%;
+  margin-top:18px;
+  padding:9px 12px;
+  border-left:2px solid var(--wine);
+  background:rgba(15,14,14,.54);
+  color:#9f9589;
+}
+.noirTagline span{color:#9f4754}
+.noirTagline b{
+  font:600 11px/1.45 Georgia,"Times New Roman",serif;
+  font-style:italic;
+}
+
+/* Dossier/card system */
+.card{
+  border-radius:7px;
+  background:
+    linear-gradient(155deg,rgba(28,26,24,.965),rgba(13,13,14,.985) 56%),
+    #111;
+  border:1px solid #3b3530;
+  box-shadow:
+    0 25px 80px rgba(0,0,0,.42),
+    inset 0 1px 0 rgba(236,229,216,.025);
+}
+.card:before{
+  left:0;right:0;
+  background:linear-gradient(90deg,transparent,rgba(192,160,106,.15),transparent);
+}
+.dossierCard{position:relative;overflow:visible}
+.caseFileTab{
+  position:absolute;
+  left:18px;
+  top:-20px;
+  height:20px;
+  padding:4px 11px 0;
+  border:1px solid #4b4035;
+  border-bottom:0;
+  border-radius:5px 5px 0 0;
+  background:#211d19;
+  color:#bba47c;
+  font:800 8px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.15em;
+}
+.caseStamp{
+  position:absolute;
+  right:22px;
+  top:20px;
+  padding:5px 8px;
+  color:rgba(161,72,83,.64);
+  border:2px solid rgba(123,48,59,.44);
+  font:900 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.13em;
+  transform:rotate(-6deg);
+  pointer-events:none;
+}
+.palermoEntry{margin-top:42px}
+.palermoEntry label,.settingsRow label{
+  color:#918577;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.palermoShell input,.bugTextarea{
+  border-radius:3px;
+  background:#0b0c0e;
+  border-color:#3a3531;
+  color:#eee8dc;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.palermoShell input::placeholder{color:#655f59}
+.palermoShell input:focus,.bugTextarea:focus{
+  border-color:#8b7351;
+  box-shadow:0 0 0 2px rgba(192,160,106,.07),inset 0 2px 10px rgba(0,0,0,.3);
+}
+
+/* Buttons now feel like desk controls / stamped actions */
+.palermoShell button{
+  border-radius:3px;
+  background:linear-gradient(180deg,#211f1e,#151516);
+  border-color:#423b36;
+  color:#ddd5c9;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.075em;
+  text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025),0 5px 16px rgba(0,0,0,.22);
+}
+.palermoShell button:hover:not(:disabled){
+  color:#f0e8db;
+  border-color:#826e52;
+  background:linear-gradient(180deg,#28231f,#191718);
+  box-shadow:0 9px 22px rgba(0,0,0,.25);
+}
+.palermoShell button.primary{
+  background:linear-gradient(180deg,#765f3d,#55432d);
+  border-color:#9b7d50;
+  color:#f3e8d4;
+  box-shadow:0 9px 26px rgba(70,52,31,.25),inset 0 1px 0 rgba(255,255,255,.12);
+}
+.palermoShell button.primary:hover:not(:disabled){
+  background:linear-gradient(180deg,#887047,#604c32);
+  border-color:#b08f5b;
+}
+.palermoShell button.danger{
+  background:linear-gradient(180deg,#652c35,#421d24);
+  border-color:#87434f;
+}
+.modeSwitch button.active,.roleModeSwitch button.active{
+  background:linear-gradient(180deg,#5c4930,#3f3324)!important;
+  border-color:#9c7b4c!important;
+  color:#f0dfc2!important;
+  box-shadow:0 0 0 1px rgba(192,160,106,.08),0 8px 22px rgba(0,0,0,.2)!important;
+}
+
+/* Lobby as an evidence desk */
+.caseMetaBar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:10px;
+  padding:7px 10px;
+  border-top:1px solid #4b4035;
+  border-bottom:1px solid #2c2825;
+  color:#8d8174;
+  background:rgba(13,13,14,.52);
+  font:700 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.18em;
+}
+.caseMetaBar b{color:#b69a6d}
+.lobbyHead{position:relative}
+.lobbyHead:after{
+  content:"";
+  position:absolute;
+  left:0;right:0;bottom:-12px;
+  height:1px;
+  background:linear-gradient(90deg,#5c4b38,transparent 72%);
+}
+.inviteHint{
+  color:#84796d;
+  font-family:Georgia,"Times New Roman",serif;
+  font-style:italic;
+}
+.evidenceCard,.caseSettingsCard{overflow:visible}
+.evidenceCard:after,.caseSettingsCard:after{
+  content:"";
+  position:absolute;
+  width:10px;height:10px;
+  border-radius:50%;
+  top:10px;
+  background:radial-gradient(circle,#a88a59 0 30%,#443724 34% 58%,transparent 62%);
+  box-shadow:0 2px 4px rgba(0,0,0,.45);
+}
+.evidenceCard:after{right:12px}
+.caseSettingsCard:after{left:12px}
+.cardTitle{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#a79b8e;
+}
+.cardTitle b{color:var(--brass)}
+.playerRow{
+  position:relative;
+  background:
+    linear-gradient(180deg,rgba(31,28,25,.74),rgba(16,16,17,.86));
+  border-color:#39332d;
+  border-radius:3px;
+}
+.playerRow:before{
+  content:"";
+  position:absolute;
+  left:0;top:0;bottom:0;width:2px;
+  background:#67563e;
+  opacity:.45;
+}
+.avatar,.playerBoardAvatar{
+  border:1px solid #4b4138;
+  background:#141414;
+  color:#c5ae82;
+  filter:sepia(.08);
+}
+.readyButton.active{
+  border-color:#5e845f!important;
+  background:linear-gradient(180deg,#314c35,#223627)!important;
+}
+.autoRolesNotice,.roleModeHeader,.customRoleHint,.prototypeNotice{
+  border-radius:3px;
+  background:rgba(14,14,14,.64);
+  border-color:#423a31;
+}
+.roleConfigRow{border-color:#302b27}
+.settingsRow input[type=range]{accent-color:#9b7a4e}
+
+/* Role reveal = classified folder */
+.roleRevealWrap{perspective:1100px}
+.roleReveal{
+  border-radius:4px;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px),
+    linear-gradient(180deg,#201d1a,#121213 65%);
+  background-size:32px 100%,auto;
+  border-color:#54483b;
+  box-shadow:0 38px 120px rgba(0,0,0,.6),0 0 0 1px rgba(192,160,106,.025);
+}
+.classifiedStrip{
+  margin:-18px -18px 24px;
+  padding:8px 10px;
+  background:
+    repeating-linear-gradient(-45deg,#5d202b 0 10px,#491923 10px 20px);
+  border:1px solid #7f3541;
+  color:#eed8d8;
+  font:900 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.2em;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+.roleReveal h2{
+  color:#f2e8d7;
+  text-shadow:0 6px 28px rgba(0,0,0,.5);
+}
+.roleEmoji{
+  width:106px;height:106px;
+  display:grid;
+  place-items:center;
+  margin:18px auto;
+  border-radius:50%;
+  background:radial-gradient(circle at 50% 42%,rgba(192,160,106,.09),transparent 58%),#0d0e10;
+  border:1px solid #4a4034;
+  box-shadow:inset 0 0 0 5px #090a0c,0 10px 34px rgba(0,0,0,.38);
+}
+.roleReveal.role-visibleKiller,.roleReveal.role-hiddenKiller{border-color:#66313a}
+.roleReveal.role-visibleKiller .roleEmoji,.roleReveal.role-hiddenKiller .roleEmoji{border-color:#6f343e;box-shadow:inset 0 0 0 5px #0b090a,0 0 38px rgba(138,47,63,.18)}
+.roleReveal.role-detective{border-color:#5d553f}
+.roleReveal.role-detective .roleEmoji{border-color:#75694a}
+.roleReveal.role-doctor{border-color:#3d5f51}
+.roleReveal.role-lover{border-color:#6b3948}
+.roleReveal.role-madness{border-color:#554063}
+.roleReveal.role-kamikaze{border-color:#70402f}
+.syncedRoleCountdown{
+  border-radius:3px;
+  border-color:#4b4034;
+  background:#0d0e10;
+}
+
+/* In-game interrogation room */
+.gameCaseMeta{margin-top:-4px}
+.gameWrap{position:relative}
+.gameWrap.phase-night:before,.gameWrap.phase-day:before,.gameWrap.phase-vote:before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+}
+.gameWrap.phase-night:before{
+  background:radial-gradient(circle at 50% 14%,rgba(55,66,98,.12),transparent 35%);
+}
+.gameWrap.phase-day:before{
+  background:radial-gradient(circle at 50% 12%,rgba(181,145,80,.07),transparent 34%);
+}
+.gameWrap.phase-vote:before{
+  background:radial-gradient(circle at 50% 10%,rgba(112,43,54,.1),transparent 34%);
+}
+.gameTop{position:relative;z-index:1}
+.phasePill{
+  border-radius:3px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.phasePill.night{background:#111722;border-color:#35425c;color:#aab8d8}
+.phasePill.day{background:#211c13;border-color:#5c4a2e;color:#ddc58f}
+.phasePill.vote{background:#281319;border-color:#67303b;color:#e1a3af}
+
+.suspectBoard{
+  position:relative;
+  border-color:#4a3c2f;
+  background:
+    linear-gradient(rgba(73,55,36,.15),rgba(73,55,36,.15)),
+    linear-gradient(180deg,#1c1916,#121211);
+}
+.suspectBoard:before{
+  background:linear-gradient(90deg,transparent,rgba(192,160,106,.24),transparent);
+}
+.suspectBoard .cardTitle span:before{
+  content:"SUSPECT BOARD // ";
+  color:#6f624f;
+}
+.evidencePin{
+  position:absolute;
+  z-index:3;
+  width:11px;height:11px;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#d0ad6c 0 20%,#815e2d 38%,#332314 72%);
+  box-shadow:0 3px 5px rgba(0,0,0,.55);
+}
+.pinOne{top:10px;left:12px}
+.pinTwo{top:10px;right:12px}
+.playerBoardRow{
+  border-radius:2px;
+  background:linear-gradient(180deg,rgba(37,33,28,.72),rgba(18,17,16,.85));
+  border-color:#3f382f;
+}
+.playerBoardRow.alive:hover{background:#24201c;border-color:#665640}
+.playerBoardRow.dead{
+  filter:grayscale(.45);
+  opacity:.5;
+}
+.interrogationPanel{
+  position:relative;
+  overflow:hidden;
+  border-color:#403a34;
+  background:
+    radial-gradient(circle at 50% 12%,rgba(192,160,106,.05),transparent 25%),
+    linear-gradient(180deg,#181719,#0d0e10);
+}
+.interrogationPanel:after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.07;
+  background:repeating-linear-gradient(180deg,transparent 0 39px,#d8cbb6 40px,transparent 41px 80px);
+}
+.interrogationPanel>*{position:relative;z-index:1}
+.phaseCaseLabel{
+  align-self:center;
+  margin-bottom:14px;
+  padding:6px 10px;
+  border-top:1px solid #4d4338;
+  border-bottom:1px solid #312d29;
+  color:#8f8272;
+  font:800 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.2em;
+}
+.interrogationPanel .bigIcon{
+  filter:drop-shadow(0 10px 28px rgba(0,0,0,.5)) grayscale(.12);
+}
+.discussionTimer{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:#e8dece;
+  text-shadow:0 0 22px rgba(192,160,106,.09);
+}
+.targetGrid button,.voteList button{
+  background:linear-gradient(180deg,#1e1c1c,#121315);
+  border-color:#3c3732;
+}
+.targetGrid button.selected,.voteList button.selected{
+  background:linear-gradient(180deg,#5e4930,#3b3023)!important;
+  border-color:#a28355!important;
+  color:#f2dfbd!important;
+  box-shadow:0 0 0 1px rgba(192,160,106,.1),0 10px 25px rgba(0,0,0,.24)!important;
+}
+.voteLockedNotice{
+  border-left:3px solid var(--brass);
+  background:#171511;
+  color:#d8c5a1;
+}
+
+/* Chats = typewritten transcripts */
+.dayChatBox,.spectatorChat,.killerBox{position:relative}
+.dayMessages,.spectatorMessages,.killerMessages{
+  border-radius:2px;
+  border-color:#35302b;
+  background:
+    repeating-linear-gradient(180deg,rgba(255,255,255,.012) 0 1px,transparent 1px 28px),
+    #0b0c0e;
+}
+.dayMessages div,.spectatorMessages div{
+  border-bottom:1px dashed #2d2925;
+}
+.dayMessages strong,.spectatorMessages strong{
+  color:#b79b70;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.dayMessages span,.spectatorMessages span{
+  color:#cfc6ba;
+  font-family:Georgia,"Times New Roman",serif;
+}
+.observerModeBanner{
+  border-radius:3px;
+  background:linear-gradient(135deg,#1d1918,#0e0f11);
+  border-color:#53463a;
+}
+.observerRoleBoard{border-color:#4a3e33}
+
+/* Side dossier cards */
+.miniRole,.voiceBox,.observerRoleBoard,.spectatorChat{
+  border-radius:4px;
+}
+.miniRole{
+  border-left:3px solid #725a3a;
+}
+.miniRole strong{font-family:Georgia,"Times New Roman",serif}
+.miniRole span{color:#a9b89d}
+.miniRole.observer span{color:#a99ab4}
+
+/* Results / closed case */
+.resultBanner{
+  border-radius:3px;
+  background:
+    linear-gradient(180deg,rgba(31,28,25,.99),rgba(11,12,14,.99));
+  border-color:#5c4d3d;
+}
+.resultBanner strong{font-family:Georgia,"Times New Roman",serif}
+.closedCaseFile{
+  position:relative;
+  background:
+    linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px),
+    linear-gradient(180deg,#211d19,#111214);
+  background-size:34px 100%,auto;
+}
+.caseClosedStamp{
+  width:max-content;
+  margin:0 auto 12px;
+  padding:7px 12px;
+  border:3px double rgba(142,57,68,.66);
+  color:#a7525f;
+  font:900 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.18em;
+  transform:rotate(-3deg);
+}
+.mvpBanner{
+  border-radius:2px;
+  border-color:#6b5637;
+  background:linear-gradient(180deg,#251f17,#161411);
+}
+.roleRevealLine{
+  border-color:#332e29;
+}
+.roleRevealLine strong{color:#c8ae7b}
+
+/* Modals feel like archived reports */
+.authModal,.bugModal,.howToModal,.leaderboardModal{
+  border-radius:5px;
+  border-color:#4a4037;
+  background:
+    linear-gradient(180deg,rgba(30,27,24,.99),rgba(13,14,16,.995));
+}
+.authBackdrop,.bugModalBackdrop,.howToBackdrop,.leaderboardBackdrop{
+  backdrop-filter:blur(8px) grayscale(.1);
+  background:rgba(3,4,5,.78)!important;
+}
+
+/* Little details */
+.featureStrip span{
+  border-radius:2px;
+  background:#0d0e10;
+  border-color:#38312b;
+  color:#85796d;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.menuMusicToggle{
+  border-style:solid!important;
+  color:#9e8f7b!important;
+}
+.errorText{color:#d98996}
+.prototypeNotice{color:#9a8e80}
+.palermoCredit{
+  color:#5f5850;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.palermoCredit b{color:#8f7b5d}
+
+/* Phase reveal becomes title-card noir */
+.phaseTransitionFlash{
+  background:
+    radial-gradient(circle at 50% 44%,rgba(192,160,106,.06),transparent 30%),
+    rgba(5,6,8,.96);
+}
+.phaseTransitionFlash:before{
+  content:"";
+  position:absolute;
+  inset:12%;
+  border-top:1px solid rgba(192,160,106,.16);
+  border-bottom:1px solid rgba(192,160,106,.10);
+}
+.phaseTransitionFlash strong{
+  font-family:Georgia,"Times New Roman",serif;
+  letter-spacing:.17em;
+}
+.phaseTransitionFlash.night strong{color:#b7bfd4}
+.phaseTransitionFlash.day strong{color:#d9c392}
+.phaseTransitionFlash.vote strong{color:#d8a0aa}
+
+/* Scrollbar */
+::-webkit-scrollbar-track{background:#08090b}
+::-webkit-scrollbar-thumb{background:#40372e;border:2px solid #08090b}
+::-webkit-scrollbar-thumb:hover{background:#62503c}
+
+/* Animations */
+@keyframes noirRainFall{
+  from{transform:translate3d(-3%, -5%,0) rotate(10deg)}
+  to{transform:translate3d(3%, 8%,0) rotate(10deg)}
+}
+@keyframes fogDrift{
+  from{transform:translateX(-8%) scaleX(.9);opacity:.4}
+  to{transform:translateX(28%) scaleX(1.15);opacity:.8}
+}
+@keyframes fogDriftTwo{
+  from{transform:translateX(12%) scaleX(1.1);opacity:.3}
+  to{transform:translateX(-26%) scaleX(.95);opacity:.65}
+}
+@keyframes lampBreath{
+  0%,100%{opacity:.72;transform:scale(.96)}
+  50%{opacity:1;transform:scale(1.03)}
+}
+
+/* Responsive noir layout */
+@media(max-width:850px){
+  .palermoTop{margin-bottom:18px}
+  .caseMetaBar{flex-wrap:wrap}
+  .suspectBoard .cardTitle span:before{content:""}
+  .caseFileTab{left:14px}
+  .caseStamp{right:14px;top:14px;font-size:8px}
+  .noirSkyline{height:26vh;opacity:.34}
+}
+@media(max-width:560px){
+  .brandSeal{width:36px;height:36px}
+  .brandCopy b{font-size:13px}
+  .brandCopy small{font-size:7px}
+  .caseKicker{flex-wrap:wrap}
+  .noirTagline{width:100%}
+  .classifiedStrip{margin:-12px -12px 20px}
+  .roleEmoji{width:88px;height:88px}
+  .caseMetaBar{font-size:7px;line-height:1.4}
+}
+@media(prefers-reduced-motion:reduce){
+  .noirRain,.noirLampGlow,.noirFog{animation:none!important}
+}
