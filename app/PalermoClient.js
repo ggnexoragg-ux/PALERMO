@@ -14,6 +14,35 @@ const DEFAULT_ROLES = [
 
 const citizen = { id: 'citizen', label: 'Citizen', emoji: '👤' }
 
+const SUPABASE_URL = 'https://xwckthedqrgbnfvwccyr.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3Y2t0aGVkcXJnYm5mdndjY3lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3Nzk3NDgsImV4cCI6MjEwNjM1NTc0OH0.kRANBc_vOD6epHHqWrGkJamgxN9enlY_siBnzmpakNM'
+const REGISTRY_HEADERS = {
+  apikey: SUPABASE_ANON_KEY,
+  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+  'Content-Type': 'application/json',
+}
+
+async function fetchPublicRooms() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_rooms?select=room_code,room_name,host_name,language,access_mode,player_count,max_players,spectator_count,max_spectators,narrator_enabled,started,heartbeat_at&order=created_at.desc`, {
+    headers: REGISTRY_HEADERS,
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error('room_list_failed')
+  return res.json()
+}
+
+async function writeRoomRegistry(room, upsert = false) {
+  const url = `${SUPABASE_URL}/rest/v1/palermo_rooms${upsert ? '?on_conflict=room_code' : ''}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      ...REGISTRY_HEADERS,
+      Prefer: upsert ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
+    },
+    body: JSON.stringify(room),
+  })
+  if (!res.ok) throw new Error('room_registry_failed')
+}
 
 const TEXT = {
   en: {
@@ -33,7 +62,22 @@ const TEXT = {
     readySystem: 'READY SYSTEM',
     roleReveal: 'ROLE REVEAL',
     back: 'BACK',
-    joinPrivate: 'JOIN PRIVATE ROOM',
+    joinPrivate: 'JOIN A ROOM',
+    publicRooms: 'PUBLIC SERVERS',
+    noPublicRooms: 'No active rooms right now.',
+    refreshRooms: 'REFRESH',
+    roomName: 'ROOM NAME',
+    access: 'ROOM ACCESS',
+    openRoom: 'OPEN',
+    approvalRoom: 'HOST APPROVAL',
+    passwordRoom: 'PASSWORD',
+    roomPassword: 'ROOM PASSWORD',
+    requestPending: 'Waiting for the host to approve your request...',
+    requestJoin: 'REQUEST TO JOIN',
+    approve: 'APPROVE',
+    deny: 'DENY',
+    joinRequests: 'JOIN REQUESTS',
+    wrongPassword: 'Incorrect room password.',
     enterCode: 'ENTER CODE',
     player: 'PLAYER',
     spectator: 'SPECTATOR',
@@ -136,7 +180,22 @@ const TEXT = {
     readySystem: 'ΣΥΣΤΗΜΑ READY',
     roleReveal: 'ΑΠΟΚΑΛΥΨΗ ΡΟΛΟΥ',
     back: 'ΠΙΣΩ',
-    joinPrivate: 'ΜΠΕΣ ΣΕ ΙΔΙΩΤΙΚΟ ΔΩΜΑΤΙΟ',
+    joinPrivate: 'ΜΠΕΣ ΣΕ ΔΩΜΑΤΙΟ',
+    publicRooms: 'ΔΗΜΟΣΙΟΙ SERVERS',
+    noPublicRooms: 'Δεν υπάρχουν ενεργά δωμάτια τώρα.',
+    refreshRooms: 'ΑΝΑΝΕΩΣΗ',
+    roomName: 'ΟΝΟΜΑ ΔΩΜΑΤΙΟΥ',
+    access: 'ΠΡΟΣΒΑΣΗ ΔΩΜΑΤΙΟΥ',
+    openRoom: 'ΑΝΟΙΧΤΟ',
+    approvalRoom: 'ΕΓΚΡΙΣΗ HOST',
+    passwordRoom: 'ΚΩΔΙΚΟΣ',
+    roomPassword: 'ΚΩΔΙΚΟΣ ΠΡΟΣΒΑΣΗΣ',
+    requestPending: 'Περιμένεις έγκριση από τον host...',
+    requestJoin: 'ΑΙΤΗΜΑ ΣΥΜΜΕΤΟΧΗΣ',
+    approve: 'ΕΓΚΡΙΣΗ',
+    deny: 'ΑΠΟΡΡΙΨΗ',
+    joinRequests: 'ΑΙΤΗΜΑΤΑ ΣΥΜΜΕΤΟΧΗΣ',
+    wrongPassword: 'Λάθος κωδικός πρόσβασης.',
     enterCode: 'ΒΑΛΕ ΚΩΔΙΚΟ',
     player: 'ΠΑΙΚΤΗΣ',
     spectator: 'ΘΕΑΤΗΣ',
@@ -264,10 +323,19 @@ export default function PalermoClient() {
   const [micError, setMicError] = useState('')
   const [muted, setMuted] = useState(false)
   const [narratorOn, setNarratorOn] = useState(true)
+  const [roomName, setRoomName] = useState('')
+  const [accessMode, setAccessMode] = useState('open')
+  const [accessCode, setAccessCode] = useState('')
+  const [joinAccessCode, setJoinAccessCode] = useState('')
+  const [publicRooms, setPublicRooms] = useState([])
+  const [roomsLoading, setRoomsLoading] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState([])
+  const [joinPending, setJoinPending] = useState(false)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
   const guestConnsRef = useRef(new Map())
+  const pendingJoinConnsRef = useRef(new Map())
   const streamRef = useRef(null)
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
@@ -314,6 +382,50 @@ export default function PalermoClient() {
   }, [screen, phase, round, lang, narratorOn])
 
   useEffect(() => {
+    if (screen !== 'join') return
+    let cancelled = false
+    const load = async () => {
+      setRoomsLoading(true)
+      try {
+        const rooms = await fetchPublicRooms()
+        if (!cancelled) setPublicRooms(rooms)
+      } catch {
+        if (!cancelled) setPublicRooms([])
+      } finally {
+        if (!cancelled) setRoomsLoading(false)
+      }
+    }
+    load()
+    const timer = setInterval(load, 5000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [screen])
+
+  useEffect(() => {
+    if (!isHost || !roomCode || !['lobby','role','game'].includes(screen)) return
+    const sync = async () => {
+      try {
+        await writeRoomRegistry({
+          room_code: roomCode,
+          room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0, 40),
+          host_name: name.trim().slice(0,18),
+          language: lang,
+          access_mode: accessMode,
+          player_count: players.length,
+          max_players: maxPlayers,
+          spectator_count: spectators.length,
+          max_spectators: maxSpectators,
+          narrator_enabled: narratorOn,
+          started: screen === 'role' || screen === 'game',
+          heartbeat_at: new Date().toISOString(),
+        }, true)
+      } catch {}
+    }
+    sync()
+    const timer = setInterval(sync, 20000)
+    return () => clearInterval(timer)
+  }, [isHost, roomCode, screen, roomName, name, lang, accessMode, players.length, maxPlayers, spectators.length, maxSpectators, narratorOn])
+
+  useEffect(() => {
     return () => {
       window.speechSynthesis?.cancel?.()
       peerRef.current?.destroy?.()
@@ -347,6 +459,48 @@ export default function PalermoClient() {
     })
   }
 
+  function admitGuest(conn, data) {
+    const entry = {
+      id: conn.peer,
+      name: String(data.name || 'Player').slice(0, 18),
+      ready: false,
+      isHost: false,
+    }
+
+    if (data.mode === 'spectator') {
+      setSpectators(current => {
+        if (current.length >= maxSpectators) {
+          conn.send({ type: 'join-error', message: t('spectatorFull') })
+          return current
+        }
+        const next = [...current.filter(p => p.id !== conn.peer), entry]
+        conn.send({ type: 'join-approved' })
+        setTimeout(() => broadcastState(players, next), 0)
+        return next
+      })
+    } else {
+      setPlayers(current => {
+        if (current.length >= maxPlayers) {
+          conn.send({ type: 'join-error', message: t('playerFull') })
+          return current
+        }
+        const next = [...current.filter(p => p.id !== conn.peer), entry]
+        conn.send({ type: 'join-approved' })
+        setTimeout(() => broadcastState(next, spectators), 0)
+        return next
+      })
+    }
+  }
+
+  function decideJoin(peerId, approved) {
+    const pending = pendingJoinConnsRef.current.get(peerId)
+    if (!pending) return
+    pendingJoinConnsRef.current.delete(peerId)
+    setPendingRequests(current => current.filter(r => r.peerId !== peerId))
+    if (approved) admitGuest(pending.conn, pending.data)
+    else pending.conn.send({ type: 'join-error', message: lang === 'el' ? 'Ο host απέρριψε το αίτημα.' : 'The host denied the request.' })
+  }
+
   function setupHostConnection(conn) {
     guestConnsRef.current.set(conn.peer, conn)
 
@@ -354,34 +508,26 @@ export default function PalermoClient() {
       if (!data || typeof data !== 'object') return
 
       if (data.type === 'join') {
-        const entry = {
-          id: conn.peer,
-          name: String(data.name || 'Player').slice(0, 18),
-          ready: false,
-          isHost: false,
+        if (accessMode === 'code' && String(data.accessCode || '') !== accessCode) {
+          conn.send({ type: 'join-error', message: t('wrongPassword') })
+          return
         }
 
-        if (data.mode === 'spectator') {
-          setSpectators(current => {
-            if (current.length >= maxSpectators) {
-              conn.send({ type: 'join-error', message: t('spectatorFull') })
-              return current
+        if (accessMode === 'request') {
+          pendingJoinConnsRef.current.set(conn.peer, { conn, data })
+          setPendingRequests(current => [
+            ...current.filter(r => r.peerId !== conn.peer),
+            {
+              peerId: conn.peer,
+              name: String(data.name || 'Player').slice(0, 18),
+              mode: data.mode === 'spectator' ? 'spectator' : 'player',
             }
-            const next = [...current.filter(p => p.id !== conn.peer), entry]
-            setTimeout(() => broadcastState(players, next), 0)
-            return next
-          })
-        } else {
-          setPlayers(current => {
-            if (current.length >= maxPlayers) {
-              conn.send({ type: 'join-error', message: t('playerFull') })
-              return current
-            }
-            const next = [...current.filter(p => p.id !== conn.peer), entry]
-            setTimeout(() => broadcastState(next, spectators), 0)
-            return next
-          })
+          ])
+          conn.send({ type: 'join-pending' })
+          return
         }
+
+        admitGuest(conn, data)
       }
 
       if (data.type === 'ready') {
@@ -395,6 +541,8 @@ export default function PalermoClient() {
 
     conn.on('close', () => {
       guestConnsRef.current.delete(conn.peer)
+      pendingJoinConnsRef.current.delete(conn.peer)
+      setPendingRequests(current => current.filter(r => r.peerId !== conn.peer))
       setPlayers(current => {
         const next = current.filter(p => p.id !== conn.peer)
         setTimeout(() => broadcastState(next, spectators), 0)
@@ -427,6 +575,20 @@ export default function PalermoClient() {
 
     peer.on('open', id => {
       const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
+      writeRoomRegistry({
+        room_code: code,
+        room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
+        host_name: name.trim().slice(0,18),
+        language: lang,
+        access_mode: accessMode,
+        player_count: 1,
+        max_players: maxPlayers,
+        spectator_count: 0,
+        max_spectators: maxSpectators,
+        narrator_enabled: narratorOn,
+        started: false,
+        heartbeat_at: new Date().toISOString(),
+      }, true).catch(() => {})
       setPlayers([hostPlayer])
       setSpectators([])
       setConnectionState('connected')
@@ -462,13 +624,22 @@ export default function PalermoClient() {
       hostConnRef.current = conn
 
       conn.on('open', () => {
-        conn.send({ type: 'join', name: name.trim(), mode: joinMode })
-        setConnectionState('connected')
-        setScreen('lobby')
+        conn.send({ type: 'join', name: name.trim(), mode: joinMode, accessCode: joinAccessCode })
+        setJoinPending(true)
+        setConnectionState('waiting')
       })
 
       conn.on('data', data => {
         if (!data || typeof data !== 'object') return
+        if (data.type === 'join-pending') {
+          setJoinPending(true)
+          setConnectionState('waiting')
+        }
+        if (data.type === 'join-approved') {
+          setJoinPending(false)
+          setConnectionState('connected')
+          setScreen('lobby')
+        }
         if (data.type === 'room-state') {
           setPlayers(data.players || [])
           setSpectators(data.spectators || [])
@@ -477,6 +648,7 @@ export default function PalermoClient() {
           setRoles(data.roles || DEFAULT_ROLES)
         }
         if (data.type === 'join-error') {
+          setJoinPending(false)
           setConnectionError(data.message || t('joinFail'))
           setConnectionState('error')
         }
@@ -670,6 +842,15 @@ export default function PalermoClient() {
           <div className="palermoEntry card">
             <label>{t('displayName')}</label>
             <input value={name} onChange={e => setName(e.target.value)} maxLength={18} placeholder="e.g. Soul" />
+            <label style={{marginTop:12}}>{t('roomName')}</label>
+            <input value={roomName} onChange={e => setRoomName(e.target.value)} maxLength={40} placeholder={name.trim() ? `${name.trim()}'s Room` : 'Palermo Room'} />
+            <label style={{marginTop:12}}>{t('access')}</label>
+            <div className="modeSwitch">
+              <button className={accessMode === 'open' ? 'active' : ''} onClick={() => setAccessMode('open')}>{t('openRoom')}</button>
+              <button className={accessMode === 'request' ? 'active' : ''} onClick={() => setAccessMode('request')}>{t('approvalRoom')}</button>
+              <button className={accessMode === 'code' ? 'active' : ''} onClick={() => setAccessMode('code')}>{t('passwordRoom')}</button>
+            </div>
+            {accessMode === 'code' && <input value={accessCode} onChange={e => setAccessCode(e.target.value)} maxLength={20} placeholder={t('roomPassword')} />}
             <div className="palermoActions">
               <button className="primary" onClick={createRoom} disabled={!name.trim() || connectionState === 'connecting'}>{t('createRoom')}</button>
               <button onClick={() => setScreen('join')} disabled={!name.trim()}>{t('joinRoom')}</button>
@@ -689,7 +870,21 @@ export default function PalermoClient() {
           <div className="card joinCard">
             <div className="palermoEyebrow">{t('joinPrivate')}</div>
             <h2>{t('enterCode')}</h2>
+            <div className="cardTitle" style={{marginBottom:10}}><span>{t('publicRooms')}</span><button onClick={async () => { setRoomsLoading(true); try { setPublicRooms(await fetchPublicRooms()) } finally { setRoomsLoading(false) } }}>{t('refreshRooms')}</button></div>
+            <div style={{display:'grid',gap:8,maxHeight:260,overflowY:'auto',marginBottom:16}}>
+              {publicRooms.map(room => (
+                <button key={room.room_code} onClick={() => { setJoinCode(room.room_code); setJoinAccessCode('') }} style={{textAlign:'left',padding:12}}>
+                  <strong>{room.room_name}</strong>
+                  <small style={{display:'block',opacity:.75,marginTop:4}}>
+                    {room.host_name} · {room.player_count}/{room.max_players} · {room.language === 'el' ? 'ΕΛ' : 'EN'} · {room.access_mode === 'open' ? 'OPEN' : room.access_mode === 'request' ? 'HOST APPROVAL' : 'PASSWORD'}
+                  </small>
+                </button>
+              ))}
+              {!roomsLoading && publicRooms.length === 0 && <small>{t('noPublicRooms')}</small>}
+              {roomsLoading && <small>{t('connecting')}</small>}
+            </div>
             <input className="codeInput" value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="X7K9Q" />
+            <input value={joinAccessCode} onChange={e => setJoinAccessCode(e.target.value)} maxLength={20} placeholder={t('roomPassword')} style={{marginTop:10}} />
             <div className="modeSwitch">
               <button className={joinMode === 'player' ? 'active' : ''} onClick={() => setJoinMode('player')}>{t('player')}</button>
               <button className={joinMode === 'spectator' ? 'active' : ''} onClick={() => setJoinMode('spectator')}>{t('spectator')}</button>
@@ -697,6 +892,7 @@ export default function PalermoClient() {
             <button className="primary wide" disabled={!joinCode.trim() || connectionState === 'connecting'} onClick={joinRoom}>
               {connectionState === 'connecting' ? t('connecting') : `${t('joinRoom')} — ${joinMode === 'player' ? t('player') : t('spectator')}`}
             </button>
+            {joinPending && <small style={{display:'block',marginTop:10}}>{t('requestPending')}</small>}
             {connectionError && <small className="errorText">{connectionError}</small>}
           </div>
         </section>
@@ -745,6 +941,21 @@ export default function PalermoClient() {
                 <label>{t('maxSpectators')} <b>{maxSpectators}</b></label>
                 <input disabled={!isHost} type="range" min="0" max="10" value={maxSpectators} onChange={e => changeMaxSpectators(e.target.value)} />
               </div>
+
+              {isHost && pendingRequests.length > 0 && (
+                <div style={{margin:'16px 0'}}>
+                  <div className="cardTitle"><span>{t('joinRequests')}</span><b>{pendingRequests.length}</b></div>
+                  {pendingRequests.map(req => (
+                    <div className="playerRow" key={req.peerId}>
+                      <span className="avatar">{req.name.slice(0,1).toUpperCase()}</span>
+                      <strong>{req.name}</strong>
+                      <small>{req.mode === 'spectator' ? t('spectator') : t('player')}</small>
+                      <button onClick={() => decideJoin(req.peerId, true)}>{t('approve')}</button>
+                      <button className="danger" onClick={() => decideJoin(req.peerId, false)}>{t('deny')}</button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="roleConfig">
                 {roles.map(role => (
