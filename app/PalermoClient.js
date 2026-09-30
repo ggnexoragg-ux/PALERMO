@@ -629,7 +629,9 @@ export default function PalermoClient() {
     setPhase(nextPhase)
     phaseRef.current = nextPhase
     setRound(nextRound)
+    roundRef.current = Number(nextRound)
     setPhaseEndsAt(Number(endsAt || 0))
+    phaseEndsAtRef.current = Number(endsAt || 0)
     setVote('')
     setVoteLocked(false)
 
@@ -672,11 +674,20 @@ export default function PalermoClient() {
   }
 
   function broadcastDaySkipState() {
+    const eligibleKeys = new Set(
+      gameRosterRef.current
+        .filter(p => p.alive && p.connected !== false)
+        .map(p => p.clientKey || p.id)
+    )
+    daySkipVotesRef.current = Object.fromEntries(
+      Object.entries(daySkipVotesRef.current).filter(([key]) => eligibleKeys.has(key))
+    )
     const count = Object.keys(daySkipVotesRef.current).length
-    const required = currentDaySkipRequired()
+    const required = eligibleKeys.size
     setDaySkipCount(count)
     setDaySkipRequired(required)
     broadcast({ type: 'day-skip-state', count, required })
+    return { count, required }
   }
 
   function finishDayEarly() {
@@ -693,10 +704,7 @@ export default function PalermoClient() {
     if (daySkipVotesRef.current[voteKey]) return false
 
     daySkipVotesRef.current = { ...daySkipVotesRef.current, [voteKey]: true }
-    broadcastDaySkipState()
-
-    const count = Object.keys(daySkipVotesRef.current).length
-    const required = currentDaySkipRequired()
+    const { count, required } = broadcastDaySkipState()
     if (required > 0 && count >= required) {
       setTimeout(() => {
         if (phaseRef.current === 'day') finishDayEarly()
@@ -2054,8 +2062,8 @@ export default function PalermoClient() {
     screenRef.current = nextScreen
     setPhase(snapshot.phase || 'night')
     phaseRef.current = snapshot.phase || 'night'
-    setRound(Number(snapshot.round || 1))
-    roundRef.current = Number(snapshot.round || 1)
+    setRound(Number(snapshot.round ?? 1))
+    roundRef.current = Number(snapshot.round ?? 1)
     setPhaseEndsAt(Number(snapshot.phaseEndsAt || 0))
     phaseEndsAtRef.current = Number(snapshot.phaseEndsAt || 0)
     setGameStartsAt(Number(snapshot.gameStartsAt || 0))
@@ -2830,7 +2838,7 @@ export default function PalermoClient() {
           screenRef.current = 'game'
           applyPhaseSchedule(
             data.phase || 'night',
-            data.round || 1,
+            data.round ?? 1,
             Number(data.startsAt || syncedHostNow()),
             Number(data.endsAt || 0)
           )
@@ -2863,7 +2871,7 @@ export default function PalermoClient() {
           screenRef.current = 'game'
           applyPhaseSchedule(
             data.phase || 'night',
-            Number(data.round || 1),
+            Number(data.round ?? 1),
             syncedHostNow(),
             Number(data.phaseEndsAt || 0)
           )
@@ -2940,7 +2948,7 @@ export default function PalermoClient() {
         if (data.type === 'phase-change') {
           applyPhaseSchedule(
             data.phase || 'night',
-            data.round || 1,
+            data.round ?? 1,
             Number(data.startsAt || syncedHostNow()),
             Number(data.endsAt || 0)
           )
