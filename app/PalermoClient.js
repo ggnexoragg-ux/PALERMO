@@ -539,6 +539,7 @@ export default function PalermoClient() {
   const [matchHistoryLoading, setMatchHistoryLoading] = useState(false)
   const [matchHistoryError, setMatchHistoryError] = useState('')
   const [resultBanner, setResultBanner] = useState(null)
+  const [spectatorRoleRoster, setSpectatorRoleRoster] = useState([])
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -1715,7 +1716,10 @@ export default function PalermoClient() {
     phaseEndsAtRef.current = Number(snapshot.phaseEndsAt || 0)
     setGameStartsAt(Number(snapshot.gameStartsAt || 0))
     gameStartsAtRef.current = Number(snapshot.gameStartsAt || 0)
-    setIsDead(!!nextRoster.find(p => p.clientKey === selfKey && !p.alive))
+    const migratedDead = !!nextRoster.find(p => p.clientKey === selfKey && !p.alive)
+    setIsDead(migratedDead)
+    isDeadRef.current = migratedDead
+    if (migratedDead) setSpectatorRoleRoster(observerRoster(nextRoster))
 
     if (oldHostKey && oldHostKey !== selfKey) {
       const oldTimer = reconnectGraceTimersRef.current.get(oldHostKey)
@@ -1934,6 +1938,13 @@ export default function PalermoClient() {
       playersRef.current = next
       return next
     })
+    if (existingSpectator) {
+      const nextSpectators = spectatorsRef.current.map(p =>
+        p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
+      )
+      spectatorsRef.current = nextSpectators
+      setSpectators(nextSpectators)
+    }
 
     playerVotesRef.current = transferMapKey(playerVotesRef.current, oldId, conn.peer)
     setPlayerVotes(playerVotesRef.current)
@@ -1956,7 +1967,10 @@ export default function PalermoClient() {
       roster: publicRoster(nextRoster),
       players: playersRef.current,
       spectators: spectatorsRef.current,
-      isDead: !existing.alive,
+      isDead: existingRoster ? !existingRoster.alive : false,
+      observerRoster: (existingSpectator || (existingRoster && !existingRoster.alive))
+        ? observerRoster(nextRoster)
+        : [],
       dayMessages: dayMessagesRef.current,
       spectatorMessages: spectatorMessagesRef.current,
       voteLocked: !!playerVotesRef.current[conn.peer],
@@ -1968,6 +1982,17 @@ export default function PalermoClient() {
   }
 
   function admitGuest(conn, data) {
+    const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
+    if (matchRunning && data.mode !== 'spectator') {
+      conn.send({
+        type: 'join-error',
+        message: lang === 'el'
+          ? 'Το παιχνίδι έχει ήδη ξεκινήσει. Μπορείς να μπεις ως θεατής.'
+          : 'The match has already started. You can join as a spectator.',
+      })
+      return
+    }
+
     const entry = {
       id: conn.peer,
       name: String(data.name || 'Player').slice(0, 18),
@@ -1985,8 +2010,22 @@ export default function PalermoClient() {
           return current
         }
         const next = [...current.filter(p => p.id !== conn.peer), entry]
+        spectatorsRef.current = next
         conn.send({ type: 'join-approved' })
-        setTimeout(() => broadcastState(players, next), 0)
+        if (matchRunning) {
+          setTimeout(() => {
+            conn.send({
+              type: 'observer-join-game',
+              roster: publicRoster(gameRosterRef.current),
+              observerRoster: observerRoster(gameRosterRef.current),
+              phase: phaseRef.current,
+              round: roundRef.current,
+              phaseEndsAt: phaseEndsAtRef.current,
+              gameStartsAt: gameStartsAtRef.current,
+            })
+          }, 40)
+        }
+        setTimeout(() => broadcastState(playersRef.current, next), 0)
         return next
       })
     } else {
@@ -1996,8 +2035,9 @@ export default function PalermoClient() {
           return current
         }
         const next = [...current.filter(p => p.id !== conn.peer), entry]
+        playersRef.current = next
         conn.send({ type: 'join-approved' })
-        setTimeout(() => broadcastState(next, spectators), 0)
+        setTimeout(() => broadcastState(next, spectatorsRef.current), 0)
         return next
       })
     }
@@ -2037,6 +2077,7 @@ export default function PalermoClient() {
     setDayMessages([])
     setDayText('')
     setSpectatorMessages([])
+    setSpectatorRoleRoster([])
     setGameWinner('')
     setGameMvp('')
     matchIdRef.current = ''
@@ -2162,6 +2203,14 @@ export default function PalermoClient() {
         const target = String(data.target || '')
         if (registerDayVote(conn.peer, target)) {
           conn.send({ type: 'vote-locked', target })
+        }
+      }
+
+      if (data.type === 'observer-state-request') {
+        const deadPlayer = gameRosterRef.current.some(p => p.id === conn.peer && !p.alive)
+        const spectator = spectatorsRef.current.some(p => p.id === conn.peer)
+        if (deadPlayer || spectator) {
+          conn.send({ type: 'observer-state', roster: observerRoster(gameRosterRef.current) })
         }
       }
 
@@ -2334,6 +2383,8 @@ export default function PalermoClient() {
           }
           setMyRole(data.role || null)
           setIsDead(!!data.isDead)
+          isDeadRef.current = !!data.isDead
+          setSpectatorRoleRoster(Array.isArray(data.observerRoster) ? data.observerRoster : [])
           setDayMessages(Array.isArray(data.dayMessages) ? data.dayMessages : [])
           setSpectatorMessages(Array.isArray(data.spectatorMessages) ? data.spectatorMessages : [])
           setVoteLocked(!!data.voteLocked)
@@ -2406,10 +2457,31 @@ export default function PalermoClient() {
           }
         }
         if (data.type === 'game-state') {
+          gameRosterRef.current = data.roster || []
           setGameRoster(data.roster || [])
+        }
+        if (data.type === 'observer-state') {
+          setSpectatorRoleRoster(Array.isArray(data.roster) ? data.roster : [])
+        }
+        if (data.type === 'observer-join-game') {
+          const publicState = Array.isArray(data.roster) ? data.roster : []
+          gameRosterRef.current = publicState
+          setGameRoster(publicState)
+          setSpectatorRoleRoster(Array.isArray(data.observerRoster) ? data.observerRoster : [])
+          setCountdown(null)
+          setScreen('game')
+          screenRef.current = 'game'
+          applyPhaseSchedule(
+            data.phase || 'night',
+            Number(data.round || 1),
+            syncedHostNow(),
+            Number(data.phaseEndsAt || 0)
+          )
         }
         if (data.type === 'eliminated') {
           setIsDead(true)
+          isDeadRef.current = true
+          hostConnRef.current?.send({ type: 'observer-state-request' })
         }
         if (data.type === 'spectator-chat') {
           setSpectatorMessages(current => [...current.slice(-49), data.message])
@@ -2758,6 +2830,12 @@ export default function PalermoClient() {
     setGameStartsAt(startsAt)
     setPhaseEndsAt(0)
     broadcast({ type: 'game-state', roster: publicRoster(roster) })
+    spectatorsRef.current.forEach(spectator => {
+      guestConnsRef.current.get(spectator.id)?.send({
+        type: 'observer-state',
+        roster: observerRoster(roster),
+      })
+    })
 
     assigned.forEach(({ player, role }) => {
       let privateRole = role.id === 'detective' && visibleKillerPlayer
@@ -2906,6 +2984,32 @@ export default function PalermoClient() {
     return roster.map(({ id, name, alive, connected = true }) => ({ id, name, alive, connected }))
   }
 
+  function observerRoster(roster = gameRosterRef.current) {
+    return roster.map(({ id, name, alive, connected = true, roleId }) => ({
+      id,
+      name,
+      alive,
+      connected,
+      roleId,
+    }))
+  }
+
+  function sendObserverState(roster = gameRosterRef.current) {
+    if (!isHostRef.current) return
+    const safeRoster = observerRoster(roster)
+    const myId = peerRef.current?.id
+    const hostPlayer = roster.find(p => p.id === myId)
+    if (hostPlayer && !hostPlayer.alive) setSpectatorRoleRoster(safeRoster)
+
+    guestConnsRef.current.forEach((conn, peerId) => {
+      const deadPlayer = roster.some(p => p.id === peerId && !p.alive)
+      const spectator = spectatorsRef.current.some(p => p.id === peerId)
+      if (conn?.open && (deadPlayer || spectator)) {
+        conn.send({ type: 'observer-state', roster: safeRoster })
+      }
+    })
+  }
+
   function aliveRoster(roster = gameRosterRef.current) {
     return roster.filter(p => p.alive)
   }
@@ -2999,6 +3103,17 @@ export default function PalermoClient() {
     setGameRoster(nextRoster)
     gameRosterRef.current = nextRoster
     broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
+    sendObserverState(nextRoster)
     broadcast({ type: 'kamikaze-result', kamikaze: actor.name, target: target.name })
     speak(`${actor.name} ${t('kamikazeBoom')} ${target.name}.`)
 
@@ -3214,6 +3329,7 @@ export default function PalermoClient() {
     setVoteScores({})
     setIsDead(false)
     setSpectatorMessages([])
+    setSpectatorRoleRoster([])
     setGameWinner('')
     setGameMvp('')
     setConnectionState('idle')
@@ -3387,6 +3503,7 @@ export default function PalermoClient() {
   const configuredRoleSlots = roles.reduce((sum, role) => sum + role.count, 0)
   const roleConfigValid = configuredRoleSlots <= players.length
   const allReady = players.length >= 2 && players.every(p => p.ready) && roleConfigValid
+  const observerMode = isDead || joinMode === 'spectator'
 
   return (
     <main className="palermoShell">
@@ -3661,6 +3778,22 @@ export default function PalermoClient() {
             <div className={`phasePill ${phase}`}>{phase === 'night' ? `🌙 ${t('night')}` : phase === 'day' ? `☀️ ${t('day')}` : `🗳️ ${t('voting')}`}</div>
           </div>
 
+          {observerMode && (
+            <div className="observerModeBanner">
+              <div>
+                <span>👁</span>
+                <div>
+                  <strong>{joinMode === 'spectator'
+                    ? (lang === 'el' ? 'ΛΕΙΤΟΥΡΓΙΑ ΘΕΑΤΗ' : 'SPECTATOR MODE')
+                    : (lang === 'el' ? 'ΕΧΕΙΣ ΑΠΟΚΛΕΙΣΤΕΙ' : 'YOU WERE ELIMINATED')}</strong>
+                  <small>{lang === 'el'
+                    ? 'Παρακολούθησε το παιχνίδι και μίλα μόνο στο chat θεατών. Μην αποκαλύπτεις ρόλους στους ζωντανούς παίκτες.'
+                    : 'Watch the match and use spectator chat only. Do not reveal roles to living players.'}</small>
+                </div>
+              </div>
+              <b>{lang === 'el' ? 'ΜΟΝΟ ΠΑΡΑΚΟΛΟΥΘΗΣΗ' : 'WATCH ONLY'}</b>
+            </div>
+          )}
           <div className="gameGrid">
             <aside className="card playerBoard">
               <div className="cardTitle">
@@ -3696,7 +3829,7 @@ export default function PalermoClient() {
               {phase === 'night' && <>
                 <div className="bigIcon">🌙</div>
                 <h3>{t('citySleeping')}</h3>
-                {!isDead && (myRole?.id === 'visibleKiller' || myRole?.id === 'hiddenKiller') ? (
+                {!observerMode && (myRole?.id === 'visibleKiller' || myRole?.id === 'hiddenKiller') ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Έχεις 15 δευτερόλεπτα να επιλέξεις στόχο. Δεν βλέπεις την επιλογή του άλλου δολοφόνου.'
@@ -3718,7 +3851,7 @@ export default function PalermoClient() {
                       ? (lang === 'el' ? `Επέλεξες: ${killerVote}` : `Selected: ${killerVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No target selected yet.')}</small>
                   </>
-                ) : !isDead && myRole?.id === 'doctor' ? (
+                ) : !observerMode && myRole?.id === 'doctor' ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Έχεις 15 δευτερόλεπτα να προστατέψεις έναν παίκτη. Μπορείς να επιλέξεις και τον εαυτό σου.'
@@ -3740,7 +3873,7 @@ export default function PalermoClient() {
                       ? (lang === 'el' ? `Προστατεύεις: ${doctorVote}` : `Protecting: ${doctorVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No player selected yet.')}</small>
                   </>
-                ) : !isDead && myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
+                ) : !observerMode && myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
                   <>
                     <p>{lang === 'el'
                       ? 'Πρώτη νύχτα: αυτή η πληροφορία είναι ιδιωτική. Μην αποκαλύψεις τον ρόλο σου.'
@@ -3768,7 +3901,7 @@ export default function PalermoClient() {
                 <h3>{t('discussion')}</h3>
                 <div className="discussionTimer">{timerText}</div>
                 <p>{t('dayChatHint')}</p>
-                {!isDead && myRole?.id === 'kamikaze' && (
+                {!observerMode && myRole?.id === 'kamikaze' && (
                   <div className="kamikazePanel">
                     <div className="cardTitle"><span>💣 {t('kamikazeAction')}</span><b>{kamikazeUsed ? t('kamikazeUsed') : '1×'}</b></div>
                     <p>{t('kamikazeChoose')}</p>
@@ -3790,7 +3923,7 @@ export default function PalermoClient() {
                     </div>
                   </div>
                 )}
-                {!isDead && (
+                {!observerMode && (
                   <div className="dayChatBox">
                     <div className="dayMessages">
                       {dayMessages.length === 0 && (
@@ -3817,15 +3950,15 @@ export default function PalermoClient() {
                   {gameRoster.filter(p => p.alive && p.name !== name).map(p => (
                     <button
                       className={vote === p.name ? 'selected' : ''}
-                      onClick={() => !voteLocked && setVote(p.name)}
-                      disabled={voteLocked}
+                      onClick={() => !observerMode && !voteLocked && setVote(p.name)}
+                      disabled={observerMode || voteLocked}
                       key={p.id}
                     >{p.name}</button>
                   ))}
                   <button
                     className={vote === 'skip' ? 'selected' : ''}
-                    onClick={() => !voteLocked && setVote('skip')}
-                    disabled={voteLocked}
+                    onClick={() => !observerMode && !voteLocked && setVote('skip')}
+                    disabled={observerMode || voteLocked}
                   >{t('skipVote')}</button>
                 </div>
                 {voteLocked && (
@@ -3833,28 +3966,57 @@ export default function PalermoClient() {
                     ✓ {lang === 'el' ? `Η ΨΗΦΟΣ ΚΛΕΙΔΩΘΗΚΕ: ${vote === 'skip' ? 'SKIP' : vote}` : `VOTE LOCKED: ${vote === 'skip' ? 'SKIP' : vote}`}
                   </div>
                 )}
-                <button className="primary wide" disabled={!vote || isDead || voteLocked} onClick={finishVote}>
+                <button className="primary wide" disabled={!vote || observerMode || voteLocked} onClick={finishVote}>
                   {voteLocked ? (lang === 'el' ? 'Η ΨΗΦΟΣ ΚΛΕΙΔΩΘΗΚΕ' : 'VOTE LOCKED') : t('lockVote')}
                 </button>
               </>}
             </div>
 
             <div className="sideStack">
-              <div className="card miniRole">
-                <small>{t('yourRole')}</small>
-                <strong>{myRole?.emoji} {roleName(myRole)}</strong>
-                <span>{isDead ? ('☠ ' + t('dead') + ' // ' + t('spectatorOnly')) : t('alive')}</span>
+              <div className={`card miniRole ${observerMode ? 'observer' : ''}`}>
+                <small>{joinMode === 'spectator' ? t('spectator') : t('yourRole')}</small>
+                <strong>{joinMode === 'spectator' ? '👁 ' + t('spectator') : `${myRole?.emoji || ''} ${roleName(myRole)}`}</strong>
+                <span>{joinMode === 'spectator'
+                  ? (lang === 'el' ? 'ΠΑΡΑΚΟΛΟΥΘΗΣΗ // ΧΩΡΙΣ ΨΗΦΟ' : 'WATCHING // NO VOTE')
+                  : isDead
+                  ? ('☠ ' + t('dead') + ' // ' + t('spectatorOnly'))
+                  : t('alive')}</span>
               </div>
               <div className="card voiceBox">
                 <div className="cardTitle"><span>{t('narrator')}</span><b>{narratorOn ? t('narratorOn') : t('narratorOff')}</b></div>
                 <button onClick={() => { stopNarrator(); setNarratorOn(v => !v) }}>{narratorOn ? t('narratorOn') : t('narratorOff')}</button>
                 <p>{t('narratorHint')}</p>
               </div>
-              {(isDead || joinMode === 'spectator') && (
+              {observerMode && spectatorRoleRoster.length > 0 && (
+                <div className="card observerRoleBoard">
+                  <div className="cardTitle">
+                    <span>{lang === 'el' ? 'ΡΟΛΟΙ ΠΑΙΧΝΙΔΙΟΥ' : 'GAME ROLES'}</span>
+                    <b>👁 {lang === 'el' ? 'ΘΕΑΤΕΣ' : 'OBSERVERS'}</b>
+                  </div>
+                  <p>{lang === 'el'
+                    ? 'Οι ρόλοι εμφανίζονται μόνο σε νεκρούς παίκτες και θεατές.'
+                    : 'Roles are visible only to eliminated players and spectators.'}</p>
+                  <div className="observerRoleList">
+                    {spectatorRoleRoster.map(player => (
+                      <div className={`observerRoleRow ${player.alive ? 'alive' : 'dead'}`} key={player.id}>
+                        <span>{player.alive ? '●' : '☠'} {player.name}</span>
+                        <strong>{roleName({ id: player.roleId })}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {observerMode && (
                 <div className="card spectatorChat">
-                  <div className="cardTitle"><span>{t('spectatorChat')}</span><b>{t('spectatorOnly')}</b></div>
+                  <div className="cardTitle">
+                    <span>{t('spectatorChat')}</span>
+                    <b>{spectators.length + gameRoster.filter(p => !p.alive).length} {lang === 'el' ? 'ΠΑΡΑΤΗΡΗΤΕΣ' : 'OBSERVERS'}</b>
+                  </div>
                   <p>{t('spectatorChatHint')}</p>
                   <div className="spectatorMessages">
+                    {spectatorMessages.length === 0 && (
+                      <div className="spectatorChatEmpty">{lang === 'el' ? 'Δεν υπάρχουν μηνύματα ακόμα.' : 'No spectator messages yet.'}</div>
+                    )}
                     {spectatorMessages.map(msg => (
                       <div key={msg.id}><strong>{msg.name}</strong><span>{msg.text}</span></div>
                     ))}
@@ -4125,7 +4287,7 @@ export default function PalermoClient() {
                 <li>{lang === 'el' ? 'Οι πολίτες κερδίζουν όταν πεθάνουν και οι δύο δολοφόνοι.' : 'Citizens win when both killers are dead.'}</li>
                 <li>{lang === 'el' ? 'Οι δολοφόνοι κερδίζουν αυτόματα όταν μείνουν ζωντανοί μαζί με μόνο έναν μη δολοφόνο.' : 'The killers automatically win when the only remaining non-killer count reaches one.'}</li>
                 <li>{lang === 'el' ? 'Η Τρέλα κερδίζει αμέσως αν ψηφιστεί εκτός παιχνιδιού.' : 'Madness immediately wins if voted out.'}</li>
-                <li>{lang === 'el' ? 'Οι νεκροί και οι θεατές έχουν δικό τους spectator text chat και δεν μπορούν να επηρεάσουν τους ζωντανούς.' : 'Dead players and spectators have their own spectator text chat and cannot participate with the living.'}</li>
+                <li>{lang === 'el' ? 'Οι νεκροί και οι θεατές μπαίνουν σε Λειτουργία Θεατή. Βλέπουν όλους τους ρόλους, χρησιμοποιούν ιδιωτικό spectator chat και δεν μπορούν να ψηφίσουν ή να συμμετέχουν με τους ζωντανούς. Δεν πρέπει να αποκαλύπτουν ρόλους στους ζωντανούς.' : 'Dead players and spectators enter Observer Mode. They can see all roles, use their private spectator chat, and cannot vote or participate with living players. They must not reveal role information to the living.'}</li>
                 <li>{lang === 'el' ? 'Αν ενεργός παίκτης χάσει τη σύνδεση, το Palermo του δίνει 20 δευτερόλεπτα να επανασυνδεθεί και επαναφέρει τον ίδιο ρόλο και την τρέχουσα φάση. Αν αποσυνδεθεί ο host, άλλος συνδεδεμένος παίκτης γίνεται αυτόματα host ώστε το δωμάτιο να συνεχίσει.' : 'If an active player disconnects, Palermo gives them 20 seconds to reconnect and restores their role and current phase. If the host disconnects, another connected player automatically becomes host so the room can continue.'}</li>
                 <li>{lang === 'el' ? 'Στο τέλος εμφανίζεται ο νικητής, οι ρόλοι και MVP βάσει των σωστών ψήφων στους δολοφόνους.' : 'At the end, the winner, all roles, and an MVP based on successful killer votes are shown.'}</li>
               </ul>
