@@ -321,3 +321,25 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
   .roleConfigRow{gap:10px}
   .roleConfigRow>span{font-size:12px}
 }
+
+/* Step 10: final beta cleanup */
+html,body{width:100%;max-width:100%;overflow-x:hidden;overscroll-behavior-x:none}
+.palermoShell{width:100%;max-width:100%}
+.lobbyGrid>*,.gameGrid>*,.sideStack>*,.lobbyHead>*,.gameTop>*{min-width:0}
+.lobbyHead h2,.gameTop h2,.cardTitle span,.roleConfigRow>span{overflow-wrap:anywhere}
+.playerRow strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.palermoShell button{touch-action:manipulation}
+.palermoShell button:focus-visible,.palermoShell input:focus-visible{outline:2px solid #a989ff;outline-offset:2px}
+.settingsRow input[type=range]{min-height:32px;touch-action:pan-x}
+.playerList,.spectatorMessages,.killerMessages,.dayMessages,.observerRoleList{overscroll-behavior:contain}
+@media(hover:none){
+  .palermoShell button:hover:not(:disabled){transform:none}
+}
+@media(max-width:560px){
+  .lobbyFooter{align-items:stretch;flex-direction:column}
+  .lobbyFooter .startBtn{width:100%;min-width:0;min-height:50px}
+  .cardTitle{gap:10px}
+  .cardTitle b{flex:0 0 auto}
+  .settingsCard{overflow:hidden}
+  .codeInput{font-size:24px!important;letter-spacing:.18em}
+}
