@@ -442,6 +442,7 @@ export default function PalermoClient() {
   const [round, setRound] = useState(1)
   const [discussion, setDiscussion] = useState(180)
   const [vote, setVote] = useState('')
+  const [voteLocked, setVoteLocked] = useState(false)
   const [micState, setMicState] = useState('idle')
   const [micError, setMicError] = useState('')
   const [muted, setMuted] = useState(false)
@@ -941,6 +942,8 @@ export default function PalermoClient() {
   useEffect(() => {
     if (screen !== 'game' || phase !== 'vote') return
     setVoteTimer(30)
+    setVote('')
+    setVoteLocked(false)
     const timer = setInterval(() => {
       setVoteTimer(v => {
         if (v <= 1) {
@@ -1259,6 +1262,7 @@ export default function PalermoClient() {
     phaseRef.current = 'night'
     setRound(1)
     setVote('')
+    setVoteLocked(false)
     setPlayerVotes({})
     playerVotesRef.current = {}
     setVoteScores({})
@@ -1381,7 +1385,10 @@ export default function PalermoClient() {
       }
 
       if (data.type === 'player-vote') {
-        registerDayVote(conn.peer, String(data.target || ''))
+        const target = String(data.target || '')
+        if (registerDayVote(conn.peer, target)) {
+          conn.send({ type: 'vote-locked', target })
+        }
       }
 
       if (data.type === 'spectator-chat') {
@@ -1570,6 +1577,10 @@ export default function PalermoClient() {
         if (data.type === 'kamikaze-result') {
           speak(`${data.kamikaze} ${t('kamikazeBoom')} ${data.target}.`)
         }
+        if (data.type === 'vote-locked') {
+          setVote(String(data.target || vote))
+          setVoteLocked(true)
+        }
         if (data.type === 'vote-result') {
           if (data.name && data.roleLabel) {
             speak(`${data.name} ${t('eliminated')} ${data.roleLabel}.`)
@@ -1606,7 +1617,13 @@ export default function PalermoClient() {
           setPhase(data.phase || 'night')
           setRound(data.round || 1)
           if (data.phase === 'day') setDiscussion(180)
-          if (data.phase !== 'vote') setVote('')
+          if (data.phase !== 'vote') {
+            setVote('')
+            setVoteLocked(false)
+          } else {
+            setVote('')
+            setVoteLocked(false)
+          }
         }
       })
 
@@ -1970,15 +1987,22 @@ export default function PalermoClient() {
   }
 
   function registerDayVote(voterId, target) {
-    if (!isHost || phaseRef.current !== 'vote' || !target) return
+    if (!isHost || phaseRef.current !== 'vote' || !target) return false
     const rosterNow = gameRosterRef.current
     const voter = rosterNow.find(p => p.id === voterId)
-    if (!voter?.alive) return
-    setPlayerVotes(current => {
-      const next = { ...current, [voterId]: target }
-      playerVotesRef.current = next
-      return next
-    })
+    if (!voter?.alive) return false
+
+    const next = { ...playerVotesRef.current, [voterId]: target }
+    playerVotesRef.current = next
+    setPlayerVotes(next)
+
+    const aliveCount = rosterNow.filter(p => p.alive).length
+    if (aliveCount > 0 && Object.keys(next).length >= aliveCount) {
+      setTimeout(() => {
+        if (phaseRef.current === 'vote') resolveDayVote(next)
+      }, 250)
+    }
+    return true
   }
 
   function resolveDayVote(votesMap) {
@@ -2031,6 +2055,7 @@ export default function PalermoClient() {
     setPlayerVotes({})
     playerVotesRef.current = {}
     setVote('')
+    setVoteLocked(false)
     setPhase('night')
     setRound(nextRound)
     broadcast({ type: 'phase-change', phase: 'night', round: nextRound })
@@ -2280,11 +2305,19 @@ export default function PalermoClient() {
   }
 
   function finishVote() {
-    if (!vote || isDead) return
+    if (!vote || isDead || voteLocked || phaseRef.current !== 'vote') return
     const voterId = peerRef.current?.id
     if (!voterId) return
-    if (isHost) registerDayVote(voterId, vote)
-    else hostConnRef.current?.send({ type: 'player-vote', target: vote })
+
+    if (isHost) {
+      if (registerDayVote(voterId, vote)) setVoteLocked(true)
+      return
+    }
+
+    if (hostConnRef.current?.open) {
+      hostConnRef.current.send({ type: 'player-vote', target: vote })
+      setVoteLocked(true)
+    }
   }
 
   const timerText = `${String(Math.floor(discussion / 60)).padStart(2, '0')}:${String(discussion % 60).padStart(2, '0')}`
@@ -2666,11 +2699,27 @@ export default function PalermoClient() {
                 <h3>{t('castVote')}</h3>
                 <div className="voteList">
                   {gameRoster.filter(p => p.alive && p.name !== name).map(p => (
-                    <button className={vote === p.name ? 'selected' : ''} onClick={() => setVote(p.name)} key={p.id}>{p.name}</button>
+                    <button
+                      className={vote === p.name ? 'selected' : ''}
+                      onClick={() => !voteLocked && setVote(p.name)}
+                      disabled={voteLocked}
+                      key={p.id}
+                    >{p.name}</button>
                   ))}
-                  <button className={vote === 'skip' ? 'selected' : ''} onClick={() => setVote('skip')}>{t('skipVote')}</button>
+                  <button
+                    className={vote === 'skip' ? 'selected' : ''}
+                    onClick={() => !voteLocked && setVote('skip')}
+                    disabled={voteLocked}
+                  >{t('skipVote')}</button>
                 </div>
-                <button className="primary wide" disabled={!vote || isDead} onClick={finishVote}>{t('lockVote')}</button>
+                {voteLocked && (
+                  <div className="voteLockedNotice">
+                    ✓ {lang === 'el' ? `Η ΨΗΦΟΣ ΚΛΕΙΔΩΘΗΚΕ: ${vote === 'skip' ? 'SKIP' : vote}` : `VOTE LOCKED: ${vote === 'skip' ? 'SKIP' : vote}`}
+                  </div>
+                )}
+                <button className="primary wide" disabled={!vote || isDead || voteLocked} onClick={finishVote}>
+                  {voteLocked ? (lang === 'el' ? 'Η ΨΗΦΟΣ ΚΛΕΙΔΩΘΗΚΕ' : 'VOTE LOCKED') : t('lockVote')}
+                </button>
               </>}
             </div>
 
