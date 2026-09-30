@@ -22,29 +22,13 @@ const REGISTRY_HEADERS = {
   'Content-Type': 'application/json',
 }
 
-const TURN_USERNAME = process.env.NEXT_PUBLIC_TURN_USERNAME || ''
-const TURN_CREDENTIAL = process.env.NEXT_PUBLIC_TURN_CREDENTIAL || ''
-const TURN_HOST = process.env.NEXT_PUBLIC_TURN_HOST || 'global.relay.metered.ca'
-
-const TURN_ICE_SERVERS = TURN_USERNAME && TURN_CREDENTIAL
-  ? [
-      { urls: `turn:${TURN_HOST}:80`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: `turn:${TURN_HOST}:80?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: `turn:${TURN_HOST}:443`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-      { urls: `turns:${TURN_HOST}:443?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
-    ]
-  : []
-
 const PEER_OPTIONS = {
   debug: 1,
   config: {
     iceServers: [
-      { urls: 'stun:stun.relay.metered.ca:80' },
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      ...TURN_ICE_SERVERS,
     ],
-    iceTransportPolicy: 'all',
     sdpSemantics: 'unified-plan',
   },
 }
@@ -146,10 +130,10 @@ const TEXT = {
     maxPlayers: 'MAX PLAYERS',
     maxSpectators: 'MAX SPECTATORS',
     spectators: 'SPECTATORS',
-    voiceChat: 'VOICE CHAT',
+    voiceChat: 'COMMUNICATION',
     micReady: 'MIC READY',
     optional: 'OPTIONAL',
-    voiceExplain: 'Enable your microphone for live daytime voice with the other living players.',
+    voiceExplain: 'Use the in-game text chat, or talk with your group through Discord or another external voice app.',
     enableMicrophone: 'ENABLE MICROPHONE',
     unmute: 'UNMUTE',
     muteMic: 'MUTE MIC',
@@ -170,7 +154,7 @@ const TEXT = {
     nightExplain: 'Special roles perform their actions. Ordinary citizens wait for morning.',
     resolveNight: 'RESOLVE NIGHT',
     discussion: 'DISCUSSION',
-    dayExplain: 'All living players may speak.',
+    dayExplain: 'Living players may discuss using the in-game text chat or an external voice app such as Discord.',
     startVote: 'START VOTE',
     castVote: 'CAST YOUR VOTE',
     skipVote: 'SKIP VOTE',
@@ -181,7 +165,7 @@ const TEXT = {
     off: 'OFF',
     enableMic: 'ENABLE MIC',
     mute: 'MUTE',
-    voiceNext: 'Live voice is enabled during daytime for living players. Night voice stays muted for now.',
+    voiceNext: 'Palermo does not use built-in voice chat. Use the game text chat or Discord/external voice if your group wants to talk.',
     visibleKiller: 'Revealed Killer',
     hiddenKiller: 'Hidden Killer',
     detective: 'Detective',
@@ -216,7 +200,7 @@ const TEXT = {
     bugGameplay: 'Gameplay',
     bugMultiplayer: 'Multiplayer',
     bugUi: 'Interface',
-    bugAudio: 'Audio / Narrator',
+    bugAudio: 'Narrator / Audio',
     bugOther: 'Other',
     bugPlaceholder: 'Tell us what happened and what you expected.',
     bugSubmit: 'SEND REPORT',
@@ -315,10 +299,10 @@ const TEXT = {
     maxPlayers: 'ΜΕΓΙΣΤΟΙ ΠΑΙΚΤΕΣ',
     maxSpectators: 'ΜΕΓΙΣΤΟΙ ΘΕΑΤΕΣ',
     spectators: 'ΘΕΑΤΕΣ',
-    voiceChat: 'ΦΩΝΗΤΙΚΗ ΣΥΝΟΜΙΛΙΑ',
+    voiceChat: 'ΕΠΙΚΟΙΝΩΝΙΑ',
     micReady: 'ΜΙΚΡΟΦΩΝΟ ΕΤΟΙΜΟ',
     optional: 'ΠΡΟΑΙΡΕΤΙΚΟ',
-    voiceExplain: 'Ενεργοποίησε το μικρόφωνο για ζωντανή φωνή την ημέρα με τους άλλους ζωντανούς παίκτες.',
+    voiceExplain: 'Χρησιμοποίησε το text chat του παιχνιδιού ή μίλα με την παρέα σου μέσω Discord ή άλλης εξωτερικής εφαρμογής φωνής.',
     enableMicrophone: 'ΕΝΕΡΓΟΠΟΙΗΣΗ ΜΙΚΡΟΦΩΝΟΥ',
     unmute: 'ΑΝΟΙΓΜΑ ΜΙΚΡΟΦΩΝΟΥ',
     muteMic: 'ΣΙΓΑΣΗ ΜΙΚΡΟΦΩΝΟΥ',
@@ -339,7 +323,7 @@ const TEXT = {
     nightExplain: 'Οι ειδικοί ρόλοι κάνουν τις ενέργειές τους. Οι απλοί πολίτες περιμένουν το πρωί.',
     resolveNight: 'ΟΛΟΚΛΗΡΩΣΗ ΝΥΧΤΑΣ',
     discussion: 'ΣΥΖΗΤΗΣΗ',
-    dayExplain: 'Όλοι οι ζωντανοί παίκτες μπορούν να μιλήσουν.',
+    dayExplain: 'Οι ζωντανοί παίκτες μπορούν να συζητούν μέσω του text chat ή εξωτερικής εφαρμογής φωνής όπως το Discord.',
     startVote: 'ΕΝΑΡΞΗ ΨΗΦΟΦΟΡΙΑΣ',
     castVote: 'ΡΙΞΕ ΤΗΝ ΨΗΦΟ ΣΟΥ',
     skipVote: 'ΠΑΡΑΛΕΙΨΗ ΨΗΦΟΥ',
@@ -350,7 +334,7 @@ const TEXT = {
     off: 'ΚΛΕΙΣΤΟ',
     enableMic: 'ΕΝΕΡΓΟΠΟΙΗΣΗ MIC',
     mute: 'ΣΙΓΑΣΗ',
-    voiceNext: 'Η ζωντανή φωνή λειτουργεί την ημέρα για τους ζωντανούς παίκτες. Τη νύχτα παραμένει σε σίγαση προς το παρόν.',
+    voiceNext: 'Το Palermo δεν έχει ενσωματωμένο voice chat. Χρησιμοποίησε το text chat ή Discord/εξωτερική φωνή αν θέλει η παρέα να μιλάει.',
     visibleKiller: 'Φανερός Δολοφόνος',
     hiddenKiller: 'Κρυφός Δολοφόνος',
     detective: 'Ντετέκτιβ',
@@ -385,7 +369,7 @@ const TEXT = {
     bugGameplay: 'Gameplay',
     bugMultiplayer: 'Multiplayer',
     bugUi: 'Interface',
-    bugAudio: 'Ήχος / Αφηγητής',
+    bugAudio: 'Αφηγητής / Ήχος',
     bugOther: 'Άλλο',
     bugPlaceholder: 'Πες μας τι συνέβη και τι περίμενες να γίνει.',
     bugSubmit: 'ΑΠΟΣΤΟΛΗ',
@@ -1676,12 +1660,6 @@ export default function PalermoClient() {
         resolveKamikazeAction(conn.peer, String(data.target || ''))
       }
 
-      if (data.type === 'voice-ready') {
-        const readyPeerId = conn.peer
-        broadcast({ type: 'voice-peer-ready', peerId: readyPeerId })
-        if (streamRef.current) startVoiceCallTo(readyPeerId, true)
-      }
-
       if (data.type === 'ready') {
         setPlayers(current => {
           const next = current.map(p => p.id === conn.peer ? { ...p, ready: !!data.ready } : p)
@@ -1736,7 +1714,6 @@ export default function PalermoClient() {
 
     const peer = makePeer(roomPeerId(code))
     peerRef.current = peer
-    peer.on('call', handleIncomingVoiceCall)
 
     peer.on('open', id => {
       const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
@@ -1782,7 +1759,6 @@ export default function PalermoClient() {
 
     const peer = makePeer()
     peerRef.current = peer
-    peer.on('call', handleIncomingVoiceCall)
 
     peer.on('open', () => {
       const conn = peer.connect(roomPeerId(code), { reliable: true })
@@ -1814,11 +1790,6 @@ export default function PalermoClient() {
           setJoinPending(false)
           setConnectionState('connected')
           setScreen('lobby')
-        }
-        if (data.type === 'voice-peer-ready') {
-          const readyPeerId = String(data.peerId || '')
-          if (streamRef.current && readyPeerId) startVoiceCallTo(readyPeerId, true)
-          ensureVoiceCalls()
         }
         if (data.type === 'room-state') {
           setPlayers(data.players || [])
@@ -2514,8 +2485,7 @@ export default function PalermoClient() {
       setIsHost(true)
       const peer = makePeer(roomPeerId(newCode))
       peerRef.current = peer
-      peer.on('call', handleIncomingVoiceCall)
-      peer.on('open', id => {
+        peer.on('open', id => {
         const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
         writeRoomRegistry({
           room_code: newCode,
@@ -2544,8 +2514,7 @@ export default function PalermoClient() {
       setIsHost(false)
       const peer = makePeer()
       peerRef.current = peer
-      peer.on('call', handleIncomingVoiceCall)
-      peer.on('open', () => {
+        peer.on('open', () => {
         const conn = peer.connect(roomPeerId(newCode), { reliable: true })
         hostConnRef.current = conn
         conn.on('open', () => {
@@ -2563,11 +2532,6 @@ export default function PalermoClient() {
             setConnectionState('connected')
             setSessionTransitioning(false)
             setScreen('lobby')
-          }
-          if (data.type === 'voice-peer-ready') {
-            const readyPeerId = String(data.peerId || '')
-            if (streamRef.current && readyPeerId) startVoiceCallTo(readyPeerId, true)
-            ensureVoiceCalls()
           }
           if (data.type === 'room-state') {
             setPlayers(data.players || [])
@@ -2828,19 +2792,6 @@ export default function PalermoClient() {
               {!roleConfigValid && <div className="prototypeNotice">{lang === 'el' ? 'Έχεις επιλέξει περισσότερους ειδικούς ρόλους από τους διαθέσιμους παίκτες.' : 'You selected more special-role slots than available players.'}</div>}
               <div className="roleTotal">{t('spectators')} <b>{spectators.length}/{maxSpectators}</b></div>
               {spectators.map(s => <div className="playerRow" key={s.id}><span className="avatar">{s.avatarUrl ? <img src={s.avatarUrl} alt="" /> : s.name[0]}</span><strong>{s.name}</strong><small>{t('spectator')}</small></div>)}
-            </div>
-          </div>
-
-          <div className="card micCard">
-            <div>
-              <div className="cardTitle"><span>{t('voiceChat')}</span><b>{micState === 'granted' ? `${t('micReady')} · ${voiceConnectedCount} LINKED` : t('optional')}</b></div>
-              <p>{t('voiceExplain')}</p>
-              {micError && <small className="errorText">{micError}</small>}
-            </div>
-            <div className="micActions">
-              {micState !== 'granted'
-                ? <button onClick={requestMic}>{t('enableMicrophone')}</button>
-                : <button className={muted ? 'danger' : 'primary'} onClick={toggleMute}>{muted ? t('unmute') : t('muteMic')}</button>}
             </div>
           </div>
 
@@ -3109,11 +3060,7 @@ export default function PalermoClient() {
                   </form>
                 </div>
               )}
-              <div className="card voiceBox">
-                <div className="cardTitle"><span>{t('voice')}</span><b>{micState === 'granted' ? (muted ? t('muted') : `${t('micReady')} · ${voiceConnectedCount} LINKED`) : t('off')}</b></div>
-                {micState !== 'granted' ? <button onClick={requestMic}>{t('enableMic')}</button> : <button onClick={toggleMute}>{muted ? t('unmute') : t('mute')}</button>}
-                <p>{t('voiceNext')}</p>
-              </div>
+
             </div>
           </div>
         </section>
@@ -3299,7 +3246,7 @@ export default function PalermoClient() {
                 <li>{lang === 'el' ? 'Όλοι μπαίνουν σε δωμάτιο, πατάνε Ready και ο host ξεκινά το παιχνίδι.' : 'Everyone joins a room, marks Ready, and the host starts the match.'}</li>
                 <li>{lang === 'el' ? 'Κάθε παίκτης παίρνει έναν μυστικό ρόλο. Μην δείχνεις την οθόνη σου.' : 'Each player receives a secret role. Keep your screen private.'}</li>
                 <li>{lang === 'el' ? 'Τη νύχτα οι ειδικοί ρόλοι κάνουν τις κρυφές ενέργειές τους.' : 'At night, special roles perform their hidden actions.'}</li>
-                <li>{lang === 'el' ? 'Το πρωί ανακοινώνεται ποιος πέθανε. Οι ζωντανοί έχουν 2 λεπτά για φωνή και text chat.' : 'In the morning, any death is announced. Living players get 2 minutes for voice and text discussion.'}</li>
+                <li>{lang === 'el' ? 'Το πρωί ανακοινώνεται ποιος πέθανε. Οι ζωντανοί έχουν 2 λεπτά για συζήτηση μέσω text chat ή Discord/εξωτερικής φωνής.' : 'In the morning, any death is announced. Living players get 2 minutes to discuss using the in-game text chat or Discord/external voice.'}</li>
                 <li>{lang === 'el' ? 'Μετά τη συζήτηση υπάρχουν 30 δευτερόλεπτα για ψηφοφορία. Μπορείς να ψηφίσεις παίκτη ή Skip.' : 'After discussion, there are 30 seconds to vote for a player or Skip.'}</li>
                 <li>{lang === 'el' ? 'Ο παίκτης που βγαίνει αποκαλύπτει τον ρόλο του και συνεχίζει μόνο ως θεατής.' : 'An eliminated player has their role revealed and can only continue as a spectator.'}</li>
               </ol>
@@ -3343,10 +3290,10 @@ export default function PalermoClient() {
             </div>
 
             <div className="howToSection">
-              <h3>{lang === 'el' ? 'ΦΩΝΗ' : 'VOICE CHAT'}</h3>
+              <h3>{lang === 'el' ? 'ΕΠΙΚΟΙΝΩΝΙΑ' : 'COMMUNICATION'}</h3>
               <p>{lang === 'el'
-                ? 'Οι ζωντανοί παίκτες μπορούν να χρησιμοποιούν voice chat κατά τη διάρκεια της ημέρας. Τη νύχτα η φωνή των ζωντανών είναι κλειδωμένη σύμφωνα με τη φάση του παιχνιδιού.'
-                : 'Living players can use voice chat during the daytime discussion. Nighttime voice is locked according to the game phase.'}</p>
+                ? 'Το Palermo δεν χρησιμοποιεί ενσωματωμένο voice chat. Κατά τη συζήτηση οι ζωντανοί παίκτες μπορούν να γράφουν στο text chat του παιχνιδιού ή, αν το συμφωνήσει η παρέα, να μιλούν μέσω Discord ή άλλης εξωτερικής εφαρμογής. Οι νεκροί και οι θεατές δεν πρέπει να επικοινωνούν με τους ζωντανούς.'
+                : 'Palermo does not use built-in voice chat. During discussion, living players can use the in-game text chat or, if the group agrees, talk through Discord or another external voice app. Dead players and spectators must not communicate with living players.'}</p>
             </div>
 
             <button className="primary wide" onClick={() => setHowToOpen(false)}>
