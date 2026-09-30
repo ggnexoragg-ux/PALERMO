@@ -30,31 +30,38 @@ async function fetchPublicRooms() {
   return res.json()
 }
 
-async function writeRoomRegistry(room, upsert = false) {
-  const url = `${SUPABASE_URL}/rest/v1/palermo_rooms${upsert ? '?on_conflict=room_code' : ''}`
-  const res = await fetch(url, {
+async function writeRoomRegistry(room, hostToken, update = false) {
+  if (!hostToken) throw new Error('missing_registry_token')
+  const fn = update ? 'palermo_update_room' : 'palermo_register_room'
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST',
-    headers: {
-      ...REGISTRY_HEADERS,
-      Prefer: upsert ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
-    },
-    body: JSON.stringify(room),
+    headers: REGISTRY_HEADERS,
+    body: JSON.stringify({
+      p_room_code: room.room_code,
+      p_room_name: room.room_name,
+      p_host_name: room.host_name,
+      p_language: room.language,
+      p_access_mode: room.access_mode,
+      p_player_count: room.player_count,
+      p_max_players: room.max_players,
+      p_spectator_count: room.spectator_count,
+      p_max_spectators: room.max_spectators,
+      p_narrator_enabled: room.narrator_enabled,
+      p_started: room.started,
+      p_host_token: hostToken,
+    }),
   })
   if (!res.ok) throw new Error('room_registry_failed')
 }
 
-async function retireRoomRegistry(code) {
-  if (!code) return
-  await fetch(`${SUPABASE_URL}/rest/v1/palermo_rooms?room_code=eq.${encodeURIComponent(code)}`, {
-    method: 'PATCH',
-    headers: { ...REGISTRY_HEADERS, Prefer: 'return=minimal' },
-    body: JSON.stringify({
-      heartbeat_at: '1970-01-01T00:00:00.000Z',
-      started: true,
-      player_count: 0,
-      spectator_count: 0,
-    }),
+async function retireRoomRegistry(code, hostToken) {
+  if (!code || !hostToken) return
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_retire_room`, {
+    method: 'POST',
+    headers: REGISTRY_HEADERS,
+    body: JSON.stringify({ p_room_code: code, p_host_token: hostToken }),
   })
+  if (!res.ok) throw new Error('room_retire_failed')
 }
 
 const TEXT = {
@@ -465,6 +472,7 @@ export default function PalermoClient() {
   const pendingJoinConnsRef = useRef(new Map())
   const streamRef = useRef(null)
   const sessionRejoinTokenRef = useRef('')
+  const registryTokenRef = useRef('')
   const menuAudioRef = useRef(null)
   const playerVotesRef = useRef({})
   const killerVotesRef = useRef({})
@@ -678,7 +686,7 @@ export default function PalermoClient() {
           narrator_enabled: narratorOn,
           started: screen === 'role' || screen === 'game',
           heartbeat_at: new Date().toISOString(),
-        }, true)
+        }, registryTokenRef.current, true)
       } catch {}
     }
     sync()
@@ -866,6 +874,7 @@ export default function PalermoClient() {
     }
 
     const code = randomCode()
+    registryTokenRef.current = `${crypto.randomUUID()}${crypto.randomUUID()}`
     setRoomCode(code)
     setIsHost(true)
     setConnectionState('connecting')
@@ -888,8 +897,7 @@ export default function PalermoClient() {
         max_spectators: maxSpectators,
         narrator_enabled: narratorOn,
         started: false,
-        heartbeat_at: new Date().toISOString(),
-      }, true).catch(() => {})
+      }, registryTokenRef.current, false).catch(() => {})
       setPlayers([hostPlayer])
       setSpectators([])
       setConnectionState('connected')
@@ -1219,7 +1227,7 @@ export default function PalermoClient() {
     setGameWinner(winner)
     setGameMvp(mvp)
     setScreen('gameOver')
-    retireRoomRegistry(roomCode).catch(() => {})
+    retireRoomRegistry(roomCode, registryTokenRef.current).catch(() => {})
     broadcast({ type: 'game-over', winner, mvp, roster })
   }
 
@@ -1424,12 +1432,13 @@ export default function PalermoClient() {
   function leaveToBrowser(notify = true) {
     const oldCode = roomCode
     if (notify && isHost) broadcast({ type: 'return-browser' })
-    if (isHost) retireRoomRegistry(oldCode).catch(() => {})
+    if (isHost) retireRoomRegistry(oldCode, registryTokenRef.current).catch(() => {})
     hostConnRef.current?.close?.()
     peerRef.current?.destroy?.()
     guestConnsRef.current.clear()
     setRoomCode('')
     setJoinCode('')
+    registryTokenRef.current = ''
     setIsHost(false)
     setPlayers([])
     setSpectators([])
@@ -1459,6 +1468,7 @@ export default function PalermoClient() {
     const newCode = payload.newCode
     const settings = payload.settings || {}
     sessionRejoinTokenRef.current = payload.rejoinToken || ''
+    registryTokenRef.current = becomingHost ? (payload.registryToken || '') : ''
 
     setRoomCode(newCode)
     setRoomName(settings.roomName ?? roomName)
@@ -1485,6 +1495,19 @@ export default function PalermoClient() {
       peerRef.current = peer
       peer.on('open', id => {
         const hostPlayer = { id, name: name.trim().slice(0,18), ready: false, isHost: true }
+        writeRoomRegistry({
+          room_code: newCode,
+          room_name: (settings.roomName || `${name.trim()}'s Room`).slice(0,40),
+          host_name: name.trim().slice(0,18),
+          language: settings.lang || lang,
+          access_mode: settings.accessMode || 'open',
+          player_count: 1,
+          max_players: settings.maxPlayers ?? maxPlayers,
+          spectator_count: 0,
+          max_spectators: settings.maxSpectators ?? maxSpectators,
+          narrator_enabled: settings.narratorOn !== false,
+          started: false,
+        }, registryTokenRef.current, false).catch(() => {})
         setPlayers([hostPlayer])
         setConnectionState('connected')
         setSessionTransitioning(false)
@@ -1546,6 +1569,7 @@ export default function PalermoClient() {
     const newHostId = randomHost && candidates.length
       ? candidates[Math.floor(Math.random() * candidates.length)]
       : oldHostId
+    const newRegistryToken = `${crypto.randomUUID()}${crypto.randomUUID()}`
     const payload = {
       type: 'session-transition',
       newCode: randomCode(),
@@ -1555,17 +1579,23 @@ export default function PalermoClient() {
     }
 
     setSessionTransitioning(true)
-    retireRoomRegistry(oldCode).catch(() => {})
+    retireRoomRegistry(oldCode, registryTokenRef.current).catch(() => {})
 
-    // If the new host is another player, send the room password only to them.
     guestConnsRef.current.forEach((conn, peerId) => {
       if (!conn?.open) return
       const safeSettings = { ...payload.settings }
       if (peerId !== newHostId) safeSettings.accessCode = ''
-      conn.send({ ...payload, settings: safeSettings })
+      conn.send({
+        ...payload,
+        settings: safeSettings,
+        registryToken: peerId === newHostId ? newRegistryToken : '',
+      })
     })
 
-    transitionToFreshSession(payload)
+    transitionToFreshSession({
+      ...payload,
+      registryToken: newHostId === oldHostId ? newRegistryToken : '',
+    })
   }
 
   function finishVote() {
