@@ -50,3 +50,30 @@ html,body{margin:0;padding:0;background:#08070d}body{min-height:100vh}
   .authBackdrop{padding:10px}.authModal{padding:18px}
   .profileHero{align-items:flex-start}.profileStats{grid-template-columns:1fr 1fr 1fr}
 }
+
+.leaderboardButton{padding:8px 11px!important;font-size:10px!important;letter-spacing:.1em!important;background:#12151f!important;border-color:#34405c!important;color:#c7d5f2!important}
+.leaderboardBackdrop{position:fixed;inset:0;z-index:75;background:rgba(5,4,9,.86);backdrop-filter:blur(10px);display:grid;place-items:center;padding:18px}
+.leaderboardModal{width:min(920px,100%);max-height:90vh;overflow:auto;padding:24px}
+.leaderboardHead{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}
+.leaderboardHead h2{margin:4px 0 6px;font-size:34px;letter-spacing:-.03em}
+.leaderboardHead p{margin:0;color:#978daa;font-size:12px;line-height:1.5}
+.leaderboardLegend,.leaderboardRow{display:grid;grid-template-columns:46px minmax(170px,1fr) 70px 60px 72px 72px;gap:10px;align-items:center}
+.leaderboardLegend{padding:0 12px 9px;color:#7f758e;font-size:9px;font-weight:900;letter-spacing:.12em}
+.leaderboardList{display:grid;gap:8px;margin-bottom:14px}
+.leaderboardRow{padding:10px 12px;border:1px solid #2b2438;border-radius:12px;background:#0d0a12;color:#bdb2c8;font-size:12px}
+.leaderboardRow.isMe{border-color:#7953c7;background:#171022}
+.leaderboardRank{font-size:16px;color:#aa8cf0}
+.leaderboardPlayer{display:flex;align-items:center;gap:10px;min-width:0}
+.leaderboardPlayer strong{color:#ece5f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leaderboardAvatar{width:34px;height:34px;border-radius:9px;overflow:hidden;background:#241b32;display:grid;place-items:center;color:#c5aaff;font-weight:900;flex:0 0 auto}
+.leaderboardAvatar img{width:100%;height:100%;object-fit:cover}
+.leaderboardEmpty{padding:30px 12px;text-align:center;border:1px dashed #30273d;border-radius:12px;color:#8f849d;font-size:12px}
+@media(max-width:700px){
+  .leaderboardBackdrop{padding:10px}.leaderboardModal{padding:16px}
+  .leaderboardHead h2{font-size:28px}
+  .leaderboardLegend{display:none}
+  .leaderboardRow{grid-template-columns:34px minmax(0,1fr) repeat(2,50px);grid-template-areas:"rank player wins mvp" "rank player games rate";gap:5px 8px}
+  .leaderboardRank{grid-area:rank}.leaderboardPlayer{grid-area:player}
+  .leaderboardRow>:nth-child(3){grid-area:wins}.leaderboardRow>:nth-child(4){grid-area:mvp}.leaderboardRow>:nth-child(5){grid-area:games}.leaderboardRow>:nth-child(6){grid-area:rate}
+  .leaderboardButton{padding:8px 9px!important;font-size:9px!important}
+}
