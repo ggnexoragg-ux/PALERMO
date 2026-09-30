@@ -1160,9 +1160,6 @@ export default function PalermoClient() {
               : myRole.id === 'madness'
               ? t('roleMadness')
               : t('roleCitizen')}</p>
-            {myRole.id === 'detective' && myRole.knownVisibleKiller && (
-              <div className="prototypeNotice">{t('knownKiller')}: <b>{myRole.knownVisibleKiller}</b></div>
-            )}
             <button className="primary wide" onClick={() => setScreen('game')}>{t('understand')}</button>
           </div>
         </section>
@@ -1201,6 +1198,17 @@ export default function PalermoClient() {
                     <small>{killerVote
                       ? (lang === 'el' ? `Επέλεξες: ${killerVote}` : `Selected: ${killerVote}`)
                       : (lang === 'el' ? 'Δεν έχεις επιλέξει ακόμα.' : 'No target selected yet.')}</small>
+                  </>
+                ) : myRole?.id === 'detective' && round === 1 && myRole?.knownVisibleKiller ? (
+                  <>
+                    <p>{lang === 'el'
+                      ? 'Πρώτη νύχτα: αυτή η πληροφορία είναι ιδιωτική. Μην αποκαλύψεις τον ρόλο σου.'
+                      : 'First night: this information is private. Do not reveal your role.'}</p>
+                    <div className="detectiveIntel">
+                      <small>{t('knownKiller')}</small>
+                      <strong>{myRole.knownVisibleKiller}</strong>
+                    </div>
+                    <div className="discussionTimer">00:{String(nightTimer).padStart(2,'0')}</div>
                   </>
                 ) : (
                   <>
