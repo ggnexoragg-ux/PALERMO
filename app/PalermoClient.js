@@ -946,12 +946,18 @@ export default function PalermoClient() {
                 <div style={{margin:'16px 0'}}>
                   <div className="cardTitle"><span>{t('joinRequests')}</span><b>{pendingRequests.length}</b></div>
                   {pendingRequests.map(req => (
-                    <div className="playerRow" key={req.peerId}>
-                      <span className="avatar">{req.name.slice(0,1).toUpperCase()}</span>
-                      <strong>{req.name}</strong>
-                      <small>{req.mode === 'spectator' ? t('spectator') : t('player')}</small>
-                      <button onClick={() => decideJoin(req.peerId, true)}>{t('approve')}</button>
-                      <button className="danger" onClick={() => decideJoin(req.peerId, false)}>{t('deny')}</button>
+                    <div className="joinRequestRow" key={req.peerId}>
+                      <div className="joinRequestPlayer">
+                        <span className="avatar">{req.name.slice(0,1).toUpperCase()}</span>
+                        <div className="joinRequestMeta">
+                          <strong>{req.name}</strong>
+                          <small>{req.mode === 'spectator' ? t('spectator') : t('player')}</small>
+                        </div>
+                      </div>
+                      <div className="joinRequestActions">
+                        <button className="joinApprove" onClick={() => decideJoin(req.peerId, true)}>{t('approve')}</button>
+                        <button className="joinDeny" onClick={() => decideJoin(req.peerId, false)}>{t('deny')}</button>
+                      </div>
                     </div>
                   ))}
                 </div>
