@@ -562,6 +562,16 @@ export default function PalermoClient() {
   const clockOffsetRef = useRef(0)
   const scheduledPhaseRef = useRef(null)
   const scheduledGameRef = useRef(null)
+  const reconnectGraceTimersRef = useRef(new Map())
+  const reconnectingRef = useRef(false)
+  const clientKeyRef = useRef('')
+  const reconnectRoomRef = useRef('')
+  const privateRolesRef = useRef(new Map())
+  const roundRef = useRef(1)
+  const phaseEndsAtRef = useRef(0)
+  const gameStartsAtRef = useRef(0)
+  const dayMessagesRef = useRef([])
+  const spectatorMessagesRef = useRef([])
   const t = key => TEXT[lang]?.[key] ?? TEXT.en[key] ?? key
   const roleName = role => t(role?.id || 'citizen')
   const syncedHostNow = () => Date.now() + (isHost ? 0 : clockOffsetRef.current)
@@ -1020,6 +1030,52 @@ export default function PalermoClient() {
   useEffect(() => { screenRef.current = screen }, [screen])
   useEffect(() => { myRoleRef.current = myRole }, [myRole])
   useEffect(() => { authSessionRef.current = authSession }, [authSession])
+  useEffect(() => { roundRef.current = round }, [round])
+  useEffect(() => { phaseEndsAtRef.current = phaseEndsAt }, [phaseEndsAt])
+  useEffect(() => { gameStartsAtRef.current = gameStartsAt }, [gameStartsAt])
+  useEffect(() => { dayMessagesRef.current = dayMessages }, [dayMessages])
+  useEffect(() => { spectatorMessagesRef.current = spectatorMessages }, [spectatorMessages])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let key = localStorage.getItem('palermo-client-key')
+    if (!key) {
+      key = crypto.randomUUID()
+      localStorage.setItem('palermo-client-key', key)
+    }
+    clientKeyRef.current = key
+  }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raw = localStorage.getItem('palermo-reconnect-v1')
+    if (!raw) return
+    try {
+      const saved = JSON.parse(raw)
+      if (!saved?.roomCode || !saved?.clientKey || Date.now() - Number(saved.savedAt || 0) > 10 * 60 * 1000) {
+        localStorage.removeItem('palermo-reconnect-v1')
+        return
+      }
+      clientKeyRef.current = saved.clientKey
+      localStorage.setItem('palermo-client-key', saved.clientKey)
+      reconnectRoomRef.current = saved.roomCode
+      setRoomCode(saved.roomCode)
+      setJoinCode(saved.roomCode)
+      setJoinMode(saved.mode === 'spectator' ? 'spectator' : 'player')
+      if (saved.name) setName(saved.name)
+      let tries = 0
+      const timer = setInterval(() => {
+        tries += 1
+        if (getPeer()) {
+          clearInterval(timer)
+          attemptGuestReconnect(saved.roomCode)
+        } else if (tries >= 15) {
+          clearInterval(timer)
+        }
+      }, 300)
+      return () => clearInterval(timer)
+    } catch {
+      localStorage.removeItem('palermo-reconnect-v1')
+    }
+  }, [])
   useEffect(() => { restoreAuth() }, [])
 
   useEffect(() => {
@@ -1459,11 +1515,99 @@ export default function PalermoClient() {
     })
   }
 
+  function saveReconnectSession(code = reconnectRoomRef.current) {
+    if (typeof window === 'undefined' || !code || !clientKeyRef.current) return
+    localStorage.setItem('palermo-reconnect-v1', JSON.stringify({
+      roomCode: String(code).toUpperCase(),
+      clientKey: clientKeyRef.current,
+      name: name.trim(),
+      mode: joinMode,
+      savedAt: Date.now(),
+    }))
+  }
+
+  function clearReconnectSession() {
+    if (typeof window !== 'undefined') localStorage.removeItem('palermo-reconnect-v1')
+    reconnectRoomRef.current = ''
+    reconnectingRef.current = false
+  }
+
+  function transferMapKey(map, oldId, newId) {
+    if (!map || !oldId || !newId || oldId === newId || !(oldId in map)) return map
+    const next = { ...map, [newId]: map[oldId] }
+    delete next[oldId]
+    return next
+  }
+
+  function reconnectGuest(conn, data) {
+    const clientKey = String(data.clientKey || '')
+    const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
+    const existing = gameRosterRef.current.find(p => p.clientKey === clientKey)
+    if (!matchRunning || !clientKey || !existing) {
+      conn.send({ type: 'join-error', message: t('joinFail') })
+      return
+    }
+
+    const oldId = existing.id
+    const timer = reconnectGraceTimersRef.current.get(clientKey)
+    if (timer) clearTimeout(timer)
+    reconnectGraceTimersRef.current.delete(clientKey)
+
+    guestConnsRef.current.delete(oldId)
+    guestConnsRef.current.set(conn.peer, conn)
+
+    const nextRoster = gameRosterRef.current.map(p =>
+      p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
+    )
+    gameRosterRef.current = nextRoster
+    setGameRoster(nextRoster)
+
+    setPlayers(current => {
+      const next = current.map(p =>
+        p.clientKey === clientKey ? { ...p, id: conn.peer, connected: true } : p
+      )
+      playersRef.current = next
+      return next
+    })
+
+    playerVotesRef.current = transferMapKey(playerVotesRef.current, oldId, conn.peer)
+    setPlayerVotes(playerVotesRef.current)
+    killerVotesRef.current = transferMapKey(killerVotesRef.current, oldId, conn.peer)
+    setKillerVotes(killerVotesRef.current)
+    if (kamikazeUsedRef.current.has(oldId)) {
+      kamikazeUsedRef.current.delete(oldId)
+      kamikazeUsedRef.current.add(conn.peer)
+    }
+
+    const role = privateRolesRef.current.get(clientKey) || null
+    conn.send({
+      type: 'reconnect-approved',
+      role,
+      screen: screenRef.current,
+      phase: phaseRef.current,
+      round: roundRef.current,
+      phaseEndsAt: phaseEndsAtRef.current,
+      gameStartsAt: gameStartsAtRef.current,
+      roster: publicRoster(nextRoster),
+      players: playersRef.current,
+      spectators: spectatorsRef.current,
+      isDead: !existing.alive,
+      dayMessages: dayMessagesRef.current,
+      spectatorMessages: spectatorMessagesRef.current,
+      voteLocked: !!playerVotesRef.current[conn.peer],
+      voteTarget: playerVotesRef.current[conn.peer] || '',
+    })
+    broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+    setTimeout(() => broadcastState(playersRef.current, spectatorsRef.current), 0)
+  }
+
   function admitGuest(conn, data) {
     const entry = {
       id: conn.peer,
       name: String(data.name || 'Player').slice(0, 18),
       avatarUrl: String(data.avatarUrl || ''),
+      clientKey: String(data.clientKey || conn.peer),
+      connected: true,
       ready: false,
       isHost: false,
     }
@@ -1591,12 +1735,17 @@ export default function PalermoClient() {
         return
       }
 
+      if (data.type === 'reconnect') {
+        reconnectGuest(conn, data)
+        return
+      }
+
       if (data.type === 'session-rejoin') {
         if (!sessionRejoinTokenRef.current || data.token !== sessionRejoinTokenRef.current) {
           conn.send({ type: 'join-error', message: t('joinFail') })
           return
         }
-        admitGuest(conn, { name: data.name, avatarUrl: data.avatarUrl, mode: data.mode || 'player' })
+        admitGuest(conn, { name: data.name, avatarUrl: data.avatarUrl, clientKey: data.clientKey, mode: data.mode || 'player' })
         return
       }
 
@@ -1680,7 +1829,26 @@ export default function PalermoClient() {
       setPendingRequests(current => current.filter(r => r.peerId !== conn.peer))
 
       if (matchRunning && wasActivePlayer) {
-        abortMatchToLobby(conn.peer)
+        const active = gameRosterRef.current.find(p => p.id === conn.peer)
+        const reconnectKey = active?.clientKey || conn.peer
+        const nextRoster = gameRosterRef.current.map(p =>
+          p.id === conn.peer ? { ...p, connected: false } : p
+        )
+        gameRosterRef.current = nextRoster
+        setGameRoster(nextRoster)
+        setPlayers(current => current.map(p =>
+          p.id === conn.peer ? { ...p, connected: false } : p
+        ))
+        broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+
+        const previousTimer = reconnectGraceTimersRef.current.get(reconnectKey)
+        if (previousTimer) clearTimeout(previousTimer)
+        const timer = setTimeout(() => {
+          reconnectGraceTimersRef.current.delete(reconnectKey)
+          const stillAway = gameRosterRef.current.find(p => p.clientKey === reconnectKey && p.connected === false)
+          if (stillAway) abortMatchToLobby(stillAway.id)
+        }, 20000)
+        reconnectGraceTimersRef.current.set(reconnectKey, timer)
         return
       }
 
@@ -1717,7 +1885,7 @@ export default function PalermoClient() {
     peerRef.current = peer
 
     peer.on('open', id => {
-      const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
+      const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, clientKey: clientKeyRef.current || id, connected: true, ready: false, isHost: true }
       writeRoomRegistry({
         room_code: code,
         room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
@@ -1744,34 +1912,7 @@ export default function PalermoClient() {
     })
   }
 
-  function joinRoom() {
-    if (!name.trim() || !joinCode.trim()) return
-    const Peer = getPeer()
-    if (!Peer) {
-      setConnectionError('Multiplayer is still loading. Try again in a second.')
-      return
-    }
-
-    const code = joinCode.trim().toUpperCase()
-    setRoomCode(code)
-    setIsHost(false)
-    setConnectionState('connecting')
-    setConnectionError('')
-
-    const peer = makePeer()
-    peerRef.current = peer
-
-    peer.on('open', () => {
-      const conn = peer.connect(roomPeerId(code), { reliable: true })
-      hostConnRef.current = conn
-
-      conn.on('open', () => {
-        conn.send({ type: 'join', name: name.trim(), avatarUrl, mode: joinMode, accessCode: joinAccessCode })
-        setJoinPending(true)
-        setConnectionState('waiting')
-      })
-
-      conn.on('data', data => {
+  function handleGuestData(data) {
         if (!data || typeof data !== 'object') return
         if (data.type === 'clock-sync-pong') {
           const receivedAt = Date.now()
@@ -1790,7 +1931,39 @@ export default function PalermoClient() {
         if (data.type === 'join-approved') {
           setJoinPending(false)
           setConnectionState('connected')
+          saveReconnectSession()
           setScreen('lobby')
+        }
+        if (data.type === 'reconnect-approved') {
+          reconnectingRef.current = false
+          setJoinPending(false)
+          setConnectionState('connected')
+          setConnectionError('')
+          if (Array.isArray(data.players)) setPlayers(data.players)
+          if (Array.isArray(data.spectators)) setSpectators(data.spectators)
+          if (Array.isArray(data.roster)) setGameRoster(data.roster)
+          setMyRole(data.role || null)
+          setIsDead(!!data.isDead)
+          setDayMessages(Array.isArray(data.dayMessages) ? data.dayMessages : [])
+          setSpectatorMessages(Array.isArray(data.spectatorMessages) ? data.spectatorMessages : [])
+          setVoteLocked(!!data.voteLocked)
+          setVote(String(data.voteTarget || ''))
+          setGameStartsAt(Number(data.gameStartsAt || 0))
+          if (data.screen === 'role' && Number(data.gameStartsAt || 0) > syncedHostNow()) {
+            setScreen('role')
+            screenRef.current = 'role'
+            setCountdown(Math.max(0, Math.ceil((Number(data.gameStartsAt) - syncedHostNow()) / 1000)))
+          } else {
+            setScreen('game')
+            screenRef.current = 'game'
+            applyPhaseSchedule(
+              data.phase || 'night',
+              Number(data.round || 1),
+              syncedHostNow(),
+              Number(data.phaseEndsAt || 0)
+            )
+          }
+          saveReconnectSession()
         }
         if (data.type === 'room-state') {
           setPlayers(data.players || [])
@@ -1894,24 +2067,111 @@ export default function PalermoClient() {
             Number(data.endsAt || 0)
           )
         }
+      
+  }
+
+  function attemptGuestReconnect(code) {
+    if (!code || reconnectingRef.current) return
+    const Peer = getPeer()
+    if (!Peer) {
+      setTimeout(() => attemptGuestReconnect(code), 400)
+      return
+    }
+
+    reconnectingRef.current = true
+    reconnectRoomRef.current = String(code).toUpperCase()
+    setConnectionState('connecting')
+    setConnectionError(lang === 'el' ? 'Επανασύνδεση...' : 'Reconnecting...')
+
+    try { hostConnRef.current?.close?.() } catch {}
+    try { peerRef.current?.destroy?.() } catch {}
+
+    const peer = makePeer()
+    peerRef.current = peer
+    let finished = false
+
+    const fail = () => {
+      if (finished) return
+      finished = true
+      reconnectingRef.current = false
+      clearReconnectSession()
+      setConnectionState('error')
+      setConnectionError(t('lostHost'))
+      setRoomCode('')
+      setPlayers([])
+      setSpectators([])
+      setIsHost(false)
+      setScreen('home')
+      screenRef.current = 'home'
+    }
+
+    const timeout = setTimeout(fail, 8000)
+
+    peer.on('open', () => {
+      const conn = peer.connect(roomPeerId(code), { reliable: true })
+      hostConnRef.current = conn
+
+      conn.on('open', () => {
+        conn.send({
+          type: 'reconnect',
+          clientKey: clientKeyRef.current,
+          name: name.trim(),
+          avatarUrl,
+        })
       })
 
+      conn.on('data', data => {
+        if (data?.type === 'reconnect-approved') {
+          finished = true
+          clearTimeout(timeout)
+        }
+        handleGuestData(data)
+      })
+
+      conn.on('close', () => {
+        if (!finished) fail()
+      })
+      conn.on('error', fail)
+    })
+    peer.on('error', fail)
+  }
+
+  function joinRoom() {
+    if (!name.trim() || !joinCode.trim()) return
+    const Peer = getPeer()
+    if (!Peer) {
+      setConnectionError('Multiplayer is still loading. Try again in a second.')
+      return
+    }
+
+    const code = joinCode.trim().toUpperCase()
+    reconnectRoomRef.current = code
+    setRoomCode(code)
+    setIsHost(false)
+    setConnectionState('connecting')
+    setConnectionError('')
+
+    const peer = makePeer()
+    peerRef.current = peer
+
+    peer.on('open', () => {
+      const conn = peer.connect(roomPeerId(code), { reliable: true })
+      hostConnRef.current = conn
+
+      conn.on('open', () => {
+        conn.send({ type: 'join', name: name.trim(), avatarUrl, clientKey: clientKeyRef.current, mode: joinMode, accessCode: joinAccessCode })
+        setJoinPending(true)
+        setConnectionState('waiting')
+      })
+
+      conn.on('data', handleGuestData)
       conn.on('close', () => {
         closeAllVoice()
         const matchRunning = screenRef.current === 'role' || screenRef.current === 'game'
         if (matchRunning) {
-          resetMatchStateForLobby()
-          peerRef.current?.destroy?.()
-          hostConnRef.current = null
-          setRoomCode('')
-          setJoinCode('')
-          setPlayers([])
-          setSpectators([])
-          setIsHost(false)
-          setConnectionState('idle')
-          setConnectionError(t('hostLeftAbort'))
-          setScreen('home')
-          screenRef.current = 'home'
+          setConnectionState('connecting')
+          setConnectionError(lang === 'el' ? 'Η σύνδεση χάθηκε. Γίνεται επανασύνδεση...' : 'Connection lost. Reconnecting...')
+          setTimeout(() => attemptGuestReconnect(reconnectRoomRef.current || roomCode), 500)
           return
         }
         setConnectionState('error')
@@ -1989,6 +2249,8 @@ export default function PalermoClient() {
       id: player.id,
       name: player.name,
       roleId: role.id,
+      clientKey: player.clientKey || player.id,
+      connected: true,
       alive: true,
     }))
 
@@ -2024,6 +2286,8 @@ export default function PalermoClient() {
         const partner = loverPlayers.find(p => p.id !== player.id)
         if (partner) privateRole = { ...privateRole, loverPartner: partner.name }
       }
+
+      privateRolesRef.current.set(player.clientKey || player.id, privateRole)
 
       const payload = {
         type: 'game-start',
@@ -2152,7 +2416,7 @@ export default function PalermoClient() {
   }
 
   function publicRoster(roster) {
-    return roster.map(({ id, name, alive }) => ({ id, name, alive }))
+    return roster.map(({ id, name, alive, connected = true }) => ({ id, name, alive, connected }))
   }
 
   function aliveRoster(roster = gameRosterRef.current) {
@@ -2424,6 +2688,9 @@ export default function PalermoClient() {
 
   function leaveToBrowser(notify = true) {
     const oldCode = roomCode
+    clearReconnectSession()
+    reconnectGraceTimersRef.current.forEach(timer => clearTimeout(timer))
+    reconnectGraceTimersRef.current.clear()
     if (notify && isHost) broadcast({ type: 'return-browser' })
     if (isHost) retireRoomRegistry(oldCode, registryTokenRef.current).catch(() => {})
     closeAllVoice()
@@ -2488,7 +2755,7 @@ export default function PalermoClient() {
       const peer = makePeer(roomPeerId(newCode))
       peerRef.current = peer
         peer.on('open', id => {
-        const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, ready: false, isHost: true }
+        const hostPlayer = { id, name: name.trim().slice(0,18), avatarUrl, clientKey: clientKeyRef.current || id, connected: true, ready: false, isHost: true }
         writeRoomRegistry({
           room_code: newCode,
           room_name: (settings.roomName || `${name.trim()}'s Room`).slice(0,40),
@@ -2520,11 +2787,13 @@ export default function PalermoClient() {
         const conn = peer.connect(roomPeerId(newCode), { reliable: true })
         hostConnRef.current = conn
         conn.on('open', () => {
+          reconnectRoomRef.current = newCode
           conn.send({
             type: 'session-rejoin',
             token: payload.rejoinToken,
             name: name.trim(),
             avatarUrl,
+            clientKey: clientKeyRef.current,
             mode: joinMode,
           })
         })
@@ -2533,6 +2802,7 @@ export default function PalermoClient() {
           if (data.type === 'join-approved') {
             setConnectionState('connected')
             setSessionTransitioning(false)
+            saveReconnectSession(newCode)
             setScreen('lobby')
           }
           if (data.type === 'room-state') {
@@ -3296,7 +3566,7 @@ export default function PalermoClient() {
                 <li>{lang === 'el' ? 'Οι δολοφόνοι κερδίζουν αυτόματα όταν μείνουν ζωντανοί μαζί με μόνο έναν μη δολοφόνο.' : 'The killers automatically win when the only remaining non-killer count reaches one.'}</li>
                 <li>{lang === 'el' ? 'Η Τρέλα κερδίζει αμέσως αν ψηφιστεί εκτός παιχνιδιού.' : 'Madness immediately wins if voted out.'}</li>
                 <li>{lang === 'el' ? 'Οι νεκροί και οι θεατές έχουν δικό τους spectator text chat και δεν μπορούν να επηρεάσουν τους ζωντανούς.' : 'Dead players and spectators have their own spectator text chat and cannot participate with the living.'}</li>
-                <li>{lang === 'el' ? 'Αν ενεργός παίκτης φύγει στη μέση του παιχνιδιού, το match ακυρώνεται και όλοι επιστρέφουν στο lobby του host.' : 'If an active player leaves during a match, the match is cancelled and everyone returns to the host lobby.'}</li>
+                <li>{lang === 'el' ? 'Αν ενεργός παίκτης χάσει τη σύνδεση, το Palermo του δίνει 20 δευτερόλεπτα να επανασυνδεθεί και επαναφέρει τον ίδιο ρόλο και την τρέχουσα φάση. Αν δεν επιστρέψει, το match ακυρώνεται.' : 'If an active player disconnects, Palermo gives them 20 seconds to reconnect and restores their role and current phase. If they do not return, the match is cancelled and everyone returns to the host lobby.'}</li>
                 <li>{lang === 'el' ? 'Στο τέλος εμφανίζεται ο νικητής, οι ρόλοι και MVP βάσει των σωστών ψήφων στους δολοφόνους.' : 'At the end, the winner, all roles, and an MVP based on successful killer votes are shown.'}</li>
               </ul>
             </div>
