@@ -1901,3 +1901,63 @@ html,body{background:var(--palermo-bg)}
 @media(prefers-reduced-motion:reduce){
   .cinemaGrain,.cinemaScratch,.mafiaSmoke,.roleReveal:after{animation:none!important}
 }
+
+
+/* Opening day + unanimous discussion skip */
+.daySkipPanel{
+  width:min(560px,100%);
+  margin:14px auto 18px;
+  padding:12px;
+  border:1px solid #51422f;
+  border-left:3px solid #9a7647;
+  border-radius:3px;
+  background:linear-gradient(180deg,rgba(42,32,22,.72),rgba(17,15,14,.9));
+  box-shadow:0 12px 34px rgba(0,0,0,.22);
+}
+.daySkipInfo{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:9px;
+  color:#a99780;
+  font:800 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.14em;
+}
+.daySkipInfo b{
+  color:#d6b77e;
+  font-size:11px;
+}
+.daySkipButton{
+  width:100%;
+  min-height:42px;
+  border-color:#705737!important;
+  background:linear-gradient(180deg,#392b1c,#211b15)!important;
+  color:#dec69d!important;
+}
+.daySkipButton:hover:not(:disabled){
+  border-color:#a17c4b!important;
+  background:linear-gradient(180deg,#493620,#2b2118)!important;
+}
+.daySkipButton.locked{
+  border-color:#49644d!important;
+  background:linear-gradient(180deg,#27372a,#1a251d)!important;
+  color:#a9c9ad!important;
+}
+.daySkipPanel>small{
+  display:block;
+  margin-top:8px;
+  color:#82776a;
+  font-size:9px;
+  line-height:1.45;
+}
+.gameWrap.phase-day .interrogationPanel{
+  box-shadow:
+    0 32px 90px rgba(0,0,0,.45),
+    0 0 44px rgba(195,155,91,.045),
+    inset 0 1px 0 rgba(255,255,255,.02);
+}
+@media(max-width:560px){
+  .daySkipPanel{padding:10px}
+  .daySkipInfo{align-items:flex-start}
+}
