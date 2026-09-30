@@ -455,6 +455,7 @@ export default function PalermoClient() {
   const [pendingRequests, setPendingRequests] = useState([])
   const [joinPending, setJoinPending] = useState(false)
   const [bugOpen, setBugOpen] = useState(false)
+  const [howToOpen, setHowToOpen] = useState(false)
   const [bugCategory, setBugCategory] = useState('gameplay')
   const [bugDescription, setBugDescription] = useState('')
   const [bugStatus, setBugStatus] = useState('idle')
@@ -1950,6 +1951,7 @@ export default function PalermoClient() {
         <div className="palermoBrand">PALERMO <span>// ONLINE</span></div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           {screen !== 'language' && <button onClick={() => setScreen('language')} style={{padding:'8px 10px'}}>{lang === 'el' ? 'ΕΛ' : 'EN'}</button>}
+          {screen !== 'language' && <button className="howToButton" onClick={() => setHowToOpen(true)}>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</button>}
           <div className="palermoBadge">{connectionState === 'connected' ? t('realtimeLobby') : t('browserGame')}</div>
         </div>
       </header>
@@ -2397,6 +2399,86 @@ export default function PalermoClient() {
             )}
           </div>
         </section>
+      )}
+
+      {howToOpen && (
+        <div className="howToBackdrop" onClick={() => setHowToOpen(false)}>
+          <div className="howToModal card" onClick={e => e.stopPropagation()}>
+            <div className="howToHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // GUIDE</div>
+                <h2>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</h2>
+              </div>
+              <button className="bugClose" onClick={() => setHowToOpen(false)}>×</button>
+            </div>
+
+            <div className="howToIntro">
+              {lang === 'el'
+                ? 'Στόχος σου εξαρτάται από τον ρόλο σου. Οι πολίτες προσπαθούν να βρουν και να βγάλουν τους δολοφόνους. Οι δολοφόνοι προσπαθούν να μείνουν ζωντανοί μέχρι να μείνουν μόνο αυτοί και ένας ακόμη μη δολοφόνος.'
+                : 'Your objective depends on your role. Citizens try to identify and eliminate both killers. The killers try to survive until only the killers and one non-killer remain alive.'}
+            </div>
+
+            <div className="howToSection">
+              <h3>{lang === 'el' ? 'ΡΟΗ ΠΑΙΧΝΙΔΙΟΥ' : 'GAME FLOW'}</h3>
+              <ol>
+                <li>{lang === 'el' ? 'Όλοι μπαίνουν σε δωμάτιο, πατάνε Ready και ο host ξεκινά το παιχνίδι.' : 'Everyone joins a room, marks Ready, and the host starts the match.'}</li>
+                <li>{lang === 'el' ? 'Κάθε παίκτης παίρνει έναν μυστικό ρόλο. Μην δείχνεις την οθόνη σου.' : 'Each player receives a secret role. Keep your screen private.'}</li>
+                <li>{lang === 'el' ? 'Τη νύχτα οι ειδικοί ρόλοι κάνουν τις κρυφές ενέργειές τους.' : 'At night, special roles perform their hidden actions.'}</li>
+                <li>{lang === 'el' ? 'Το πρωί ανακοινώνεται ποιος πέθανε. Οι ζωντανοί έχουν 2 λεπτά για φωνή και text chat.' : 'In the morning, any death is announced. Living players get 2 minutes for voice and text discussion.'}</li>
+                <li>{lang === 'el' ? 'Μετά τη συζήτηση υπάρχουν 30 δευτερόλεπτα για ψηφοφορία. Μπορείς να ψηφίσεις παίκτη ή Skip.' : 'After discussion, there are 30 seconds to vote for a player or Skip.'}</li>
+                <li>{lang === 'el' ? 'Ο παίκτης που βγαίνει αποκαλύπτει τον ρόλο του και συνεχίζει μόνο ως θεατής.' : 'An eliminated player has their role revealed and can only continue as a spectator.'}</li>
+              </ol>
+            </div>
+
+            <div className="howToSection">
+              <h3>{lang === 'el' ? 'ΝΥΧΤΑ' : 'NIGHT'}</h3>
+              <ul>
+                <li>{lang === 'el' ? 'Οι δύο δολοφόνοι επιλέγουν ξεχωριστά στόχο μέσα σε 15 δευτερόλεπτα και δεν βλέπουν ποιος είναι ο άλλος δολοφόνος.' : 'Both killers independently choose a target within 15 seconds and do not know the other killer’s identity.'}</li>
+                <li>{lang === 'el' ? 'Αν επιλέξουν το ίδιο άτομο, αυτό είναι ο στόχος. Αν επιλέξουν διαφορετικούς, το παιχνίδι επιλέγει τυχαία ανάμεσα στους δύο στόχους.' : 'If both killers choose the same person, that is the target. If they disagree, the game randomly chooses between their two targets.'}</li>
+                <li>{lang === 'el' ? 'Ο Γιατρός προστατεύει έναν ζωντανό παίκτη κάθε νύχτα, ακόμα και τον εαυτό του ή έναν δολοφόνο. Αν προστατέψει το θύμα, κανείς δεν πεθαίνει.' : 'The Doctor protects one living player every night, including themself or a killer. If the protected player is targeted, nobody dies.'}</li>
+                <li>{lang === 'el' ? 'Την πρώτη νύχτα ο Ντετέκτιβ βλέπει ποιος είναι ο Φανερός Δολοφόνος.' : 'On the first night, the Detective privately learns who the Revealed Killer is.'}</li>
+                <li>{lang === 'el' ? 'Οι νεκροί δεν συμμετέχουν πλέον στις ενέργειες του παιχνιδιού.' : 'Dead players no longer take part in gameplay actions.'}</li>
+              </ul>
+            </div>
+
+            <div className="howToSection">
+              <h3>{lang === 'el' ? 'ΡΟΛΟΙ' : 'ROLES'}</h3>
+              <div className="roleGuideGrid">
+                <div><strong>🔪 {t('visibleKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Επιλέγει κρυφά έναν στόχο κάθε νύχτα. Δεν γνωρίζει ποιος είναι ο Κρυφός Δολοφόνος.' : 'Killer. Privately chooses one target each night. Does not know who the Hidden Killer is.'}</p></div>
+                <div><strong>🗡️ {t('hiddenKiller')}</strong><p>{lang === 'el' ? 'Δολοφόνος. Έχει την ίδια νυχτερινή ενέργεια και δεν γνωρίζει ποιος είναι ο Φανερός Δολοφόνος.' : 'Killer. Has the same nightly action and does not know who the Revealed Killer is.'}</p></div>
+                <div><strong>🕵️ {t('detective')}</strong><p>{lang === 'el' ? 'Την πρώτη νύχτα μαθαίνει ιδιωτικά ποιος είναι ο Φανερός Δολοφόνος.' : 'Privately learns the Revealed Killer’s identity on the first night.'}</p></div>
+                <div><strong>🩺 {t('doctor')}</strong><p>{lang === 'el' ? 'Προστατεύει έναν παίκτη κάθε νύχτα. Μπορεί να προστατεύσει και τον εαυτό του.' : 'Protects one player every night and may protect themself.'}</p></div>
+                <div><strong>❤️ {t('lover')}</strong><p>{lang === 'el' ? 'Οι δύο Ερωτευμένοι είναι δεμένοι. Αν πεθάνει ο ένας, πεθαίνει και ο άλλος.' : 'The two Lovers are linked. If one dies, the other dies as well.'}</p></div>
+                <div><strong>💣 {t('kamikaze')}</strong><p>{lang === 'el' ? 'Μία φορά την ημέρα μπορεί να ανατιναχτεί μαζί με έναν ζωντανό μη δολοφόνο. Πεθαίνουν και οι δύο.' : 'Once during the day, may detonate with one living non-killer. Both players die.'}</p></div>
+                <div><strong>🌀 {t('madness')}</strong><p>{lang === 'el' ? 'Αν η Τρέλα ψηφιστεί και βγει από το παιχνίδι, κερδίζει αμέσως μόνη της και το παιχνίδι τελειώνει.' : 'If Madness is voted out, Madness immediately wins alone and the match ends.'}</p></div>
+                <div><strong>👤 {t('citizen')}</strong><p>{lang === 'el' ? 'Δεν έχει νυχτερινή δύναμη. Συζητά, παρατηρεί και ψηφίζει για να βρει τους δολοφόνους.' : 'Has no night action. Discuss, observe, and vote to identify the killers.'}</p></div>
+              </div>
+            </div>
+
+            <div className="howToSection">
+              <h3>{lang === 'el' ? 'ΝΙΚΗ & ΕΙΔΙΚΟΙ ΚΑΝΟΝΕΣ' : 'WIN CONDITIONS & SPECIAL RULES'}</h3>
+              <ul>
+                <li>{lang === 'el' ? 'Οι πολίτες κερδίζουν όταν πεθάνουν και οι δύο δολοφόνοι.' : 'Citizens win when both killers are dead.'}</li>
+                <li>{lang === 'el' ? 'Οι δολοφόνοι κερδίζουν αυτόματα όταν μείνουν ζωντανοί μαζί με μόνο έναν μη δολοφόνο.' : 'The killers automatically win when the only remaining non-killer count reaches one.'}</li>
+                <li>{lang === 'el' ? 'Η Τρέλα κερδίζει αμέσως αν ψηφιστεί εκτός παιχνιδιού.' : 'Madness immediately wins if voted out.'}</li>
+                <li>{lang === 'el' ? 'Οι νεκροί και οι θεατές έχουν δικό τους spectator text chat και δεν μπορούν να επηρεάσουν τους ζωντανούς.' : 'Dead players and spectators have their own spectator text chat and cannot participate with the living.'}</li>
+                <li>{lang === 'el' ? 'Αν ενεργός παίκτης φύγει στη μέση του παιχνιδιού, το match ακυρώνεται και όλοι επιστρέφουν στο lobby του host.' : 'If an active player leaves during a match, the match is cancelled and everyone returns to the host lobby.'}</li>
+                <li>{lang === 'el' ? 'Στο τέλος εμφανίζεται ο νικητής, οι ρόλοι και MVP βάσει των σωστών ψήφων στους δολοφόνους.' : 'At the end, the winner, all roles, and an MVP based on successful killer votes are shown.'}</li>
+              </ul>
+            </div>
+
+            <div className="howToSection">
+              <h3>{lang === 'el' ? 'ΦΩΝΗ' : 'VOICE CHAT'}</h3>
+              <p>{lang === 'el'
+                ? 'Οι ζωντανοί παίκτες μπορούν να χρησιμοποιούν voice chat κατά τη διάρκεια της ημέρας. Τη νύχτα η φωνή των ζωντανών είναι κλειδωμένη σύμφωνα με τη φάση του παιχνιδιού.'
+                : 'Living players can use voice chat during the daytime discussion. Nighttime voice is locked according to the game phase.'}</p>
+            </div>
+
+            <button className="primary wide" onClick={() => setHowToOpen(false)}>
+              {lang === 'el' ? 'ΚΑΤΑΛΑΒΑ' : 'GOT IT'}
+            </button>
+          </div>
+        </div>
       )}
 
       <button className="bugReportFab" onClick={() => { setBugOpen(true); setBugStatus('idle') }}>
