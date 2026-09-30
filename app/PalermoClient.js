@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_ROLES = [
-  { id: 'killer', label: 'Killer', emoji: '🔪', count: 2, min: 1 },
+  { id: 'visibleKiller', label: 'Revealed Killer', emoji: '🔪', count: 1, min: 1 },
+  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 1, min: 0 },
@@ -89,15 +90,17 @@ const TEXT = {
     enableMic: 'ENABLE MIC',
     mute: 'MUTE',
     voiceNext: 'Microphone permission works. Live room audio is the next step.',
-    killer: 'Killer',
+    visibleKiller: 'Revealed Killer',
+    hiddenKiller: 'Hidden Killer',
     detective: 'Detective',
     doctor: 'Doctor',
     lover: 'Lover',
     kamikaze: 'Kamikaze',
     madness: 'Madness',
     citizen: 'Citizen',
-    roleKiller: 'Work with the other killer. During the night, agree on one target.',
-    roleDetective: 'Investigate one player during the night and use the information carefully.',
+    roleVisibleKiller: 'You are the revealed killer. Work with the hidden killer and agree on one target each night.',
+    roleHiddenKiller: 'You are the hidden killer. Work with the revealed killer, but your identity stays concealed from the detective.',
+    roleDetective: 'You know who the revealed killer is. Use that information carefully without exposing yourself.',
     roleDoctor: 'Protect one player each night.',
     roleLover: 'Your fate is linked to another player.',
     roleKamikaze: 'Your elimination can trigger a dangerous consequence.',
@@ -113,7 +116,7 @@ const TEXT = {
     connectFail: 'Could not connect to that room code.',
     micDenied: 'Microphone permission was denied or unavailable.',
     narrator: 'NARRATOR', narratorOn: 'ON', narratorOff: 'OFF', narratorHint: 'Game events are spoken in your selected language.',
-    narrRole: 'Your role is', narrNight: 'Night begins. The city falls asleep.', narrDay: 'Day begins. Discussion is now open.', narrVote: 'Voting has started. Choose carefully.',
+    narrRole: 'Your role is', knownKiller: 'THE REVEALED KILLER IS', narrNight: 'Night falls over Palermo.', narrDay: 'Morning comes to Palermo. Discussion begins.', narrVote: 'Voting has started. Choose carefully.',
     madeBy: 'Made by'
   },
   el: {
@@ -190,15 +193,17 @@ const TEXT = {
     enableMic: 'ΕΝΕΡΓΟΠΟΙΗΣΗ MIC',
     mute: 'ΣΙΓΑΣΗ',
     voiceNext: 'Η άδεια μικροφώνου λειτουργεί. Η ζωντανή φωνή στο δωμάτιο είναι το επόμενο βήμα.',
-    killer: 'Δολοφόνος',
+    visibleKiller: 'Φανερός Δολοφόνος',
+    hiddenKiller: 'Κρυφός Δολοφόνος',
     detective: 'Ντετέκτιβ',
     doctor: 'Γιατρός',
     lover: 'Ερωτευμένη',
     kamikaze: 'Καμικάζε',
     madness: 'Τρέλα',
     citizen: 'Πολίτης',
-    roleKiller: 'Συνεννοήσου με τον άλλο δολοφόνο. Τη νύχτα επιλέξτε έναν στόχο.',
-    roleDetective: 'Ερεύνησε έναν παίκτη τη νύχτα και χρησιμοποίησε προσεκτικά την πληροφορία.',
+    roleVisibleKiller: 'Είσαι ο Φανερός Δολοφόνος. Συνεργάσου με τον Κρυφό Δολοφόνο και επιλέξτε έναν στόχο κάθε νύχτα.',
+    roleHiddenKiller: 'Είσαι ο Κρυφός Δολοφόνος. Συνεργάσου με τον Φανερό Δολοφόνο, αλλά η ταυτότητά σου παραμένει κρυφή από τον Ντετέκτιβ.',
+    roleDetective: 'Γνωρίζεις ποιος είναι ο Φανερός Δολοφόνος. Χρησιμοποίησε αυτή την πληροφορία προσεκτικά χωρίς να αποκαλυφθείς.',
     roleDoctor: 'Προστάτεψε έναν παίκτη κάθε βράδυ.',
     roleLover: 'Η μοίρα σου είναι δεμένη με έναν άλλο παίκτη.',
     roleKamikaze: 'Η εξόντωσή σου μπορεί να προκαλέσει επικίνδυνη συνέπεια.',
@@ -214,7 +219,7 @@ const TEXT = {
     connectFail: 'Δεν ήταν δυνατή η σύνδεση σε αυτόν τον κωδικό.',
     micDenied: 'Η άδεια μικροφώνου απορρίφθηκε ή δεν είναι διαθέσιμη.',
     narrator: 'ΑΦΗΓΗΤΗΣ', narratorOn: 'ΕΝΕΡΓΟΣ', narratorOff: 'ΚΛΕΙΣΤΟΣ', narratorHint: 'Τα γεγονότα του παιχνιδιού ακούγονται στη γλώσσα που επέλεξες.',
-    narrRole: 'Ο ρόλος σου είναι', narrNight: 'Η νύχτα ξεκινά. Η πόλη κοιμάται.', narrDay: 'Η μέρα ξεκινά. Η συζήτηση είναι ανοιχτή.', narrVote: 'Η ψηφοφορία ξεκίνησε. Διάλεξε προσεκτικά.',
+    narrRole: 'Ο ρόλος σου είναι', knownKiller: 'Ο ΦΑΝΕΡΟΣ ΔΟΛΟΦΟΝΟΣ ΕΙΝΑΙ', narrNight: 'Μια νύχτα πέφτει στο Παλέρμο.', narrDay: 'Η μέρα ξημερώνει στο Παλέρμο. Ώρα για συζήτηση.', narrVote: 'Η ψηφοφορία ξεκίνησε. Διάλεξε προσεκτικά.',
     madeBy: 'Δημιουργήθηκε από'
   }
 }
@@ -561,12 +566,21 @@ export default function PalermoClient() {
         while (pool.length < players.length) pool.push(citizen)
         pool = shuffle(pool).slice(0, players.length)
 
-        players.forEach((player, index) => {
-          const role = pool[index] || citizen
+        const assigned = players.map((player, index) => ({
+          player,
+          role: pool[index] || citizen,
+        }))
+        const visibleKillerPlayer = assigned.find(entry => entry.role.id === 'visibleKiller')?.player
+
+        assigned.forEach(({ player, role }) => {
+          const privateRole = role.id === 'detective' && visibleKillerPlayer
+            ? { ...role, knownVisibleKiller: visibleKillerPlayer.name }
+            : role
+
           if (player.isHost) {
-            setMyRole(role)
+            setMyRole(privateRole)
           } else {
-            guestConnsRef.current.get(player.id)?.send({ type: 'game-start', role })
+            guestConnsRef.current.get(player.id)?.send({ type: 'game-start', role: privateRole })
           }
         })
 
@@ -795,8 +809,10 @@ export default function PalermoClient() {
             <div className="roleEmoji">{myRole.emoji}</div>
             <small>{t('yourRole')}</small>
             <h2>{roleName(myRole).toUpperCase()}</h2>
-            <p>{myRole.id === 'killer'
-              ? t('roleKiller')
+            <p>{myRole.id === 'visibleKiller'
+              ? t('roleVisibleKiller')
+              : myRole.id === 'hiddenKiller'
+              ? t('roleHiddenKiller')
               : myRole.id === 'detective'
               ? t('roleDetective')
               : myRole.id === 'doctor'
@@ -808,6 +824,9 @@ export default function PalermoClient() {
               : myRole.id === 'madness'
               ? t('roleMadness')
               : t('roleCitizen')}</p>
+            {myRole.id === 'detective' && myRole.knownVisibleKiller && (
+              <div className="prototypeNotice">{t('knownKiller')}: <b>{myRole.knownVisibleKiller}</b></div>
+            )}
             <button className="primary wide" onClick={() => setScreen('game')}>{t('understand')}</button>
           </div>
         </section>
