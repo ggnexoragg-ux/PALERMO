@@ -2282,6 +2282,9 @@ export default function PalermoClient() {
     )
     gameRosterRef.current = nextRoster
     setGameRoster(nextRoster)
+    if (phaseRef.current === 'day' && isHostRef.current) {
+      setTimeout(broadcastDaySkipState, 0)
+    }
 
     setPlayers(current => {
       const next = current.map(p =>
@@ -2642,6 +2645,10 @@ export default function PalermoClient() {
           return next
         })
         broadcast({ type: 'game-state', roster: publicRoster(nextRoster) })
+        if (phaseRef.current === 'day') {
+          const { count, required } = broadcastDaySkipState()
+          if (required > 0 && count >= required) setTimeout(finishDayEarly, 220)
+        }
 
         const previousTimer = reconnectGraceTimersRef.current.get(reconnectKey)
         if (previousTimer) clearTimeout(previousTimer)
