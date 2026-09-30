@@ -2720,7 +2720,12 @@ export default function PalermoClient() {
               <div className="palermoEyebrow">{t('privateRoom')} // {connectionState === 'connected' ? t('connected') : t('connecting')}</div>
               <h2>{t('room')} <span>{roomCode}</span></h2>
             </div>
-            <button className="copyCode" onClick={() => navigator.clipboard?.writeText(roomCode)}>{t('copyCode')}</button>
+            <div className="lobbyHeadActions">
+              <button className="backBtn" onClick={() => leaveToBrowser(true)}>
+                ← {lang === 'el' ? (isHost ? 'ΚΛΕΙΣΙΜΟ LOBBY' : 'ΠΙΣΩ') : (isHost ? 'CLOSE LOBBY' : 'BACK')}
+              </button>
+              <button className="copyCode" onClick={() => navigator.clipboard?.writeText(roomCode)}>{t('copyCode')}</button>
+            </div>
           </div>
 
           <div className="lobbyGrid">
