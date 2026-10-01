@@ -646,6 +646,13 @@ export default function PalermoClient() {
   const [publicProfileLoading, setPublicProfileLoading] = useState(false)
   const [publicProfileError, setPublicProfileError] = useState('')
   const [achievementToast, setAchievementToast] = useState(null)
+  const [adminOpen, setAdminOpen] = useState(false)
+  const [adminTab, setAdminTab] = useState('overview')
+  const [adminData, setAdminData] = useState({ summary: {}, profiles: [], rooms: [], bugs: [] })
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminError, setAdminError] = useState('')
+  const [adminSearch, setAdminSearch] = useState('')
+  const [adminAction, setAdminAction] = useState('')
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -1085,6 +1092,90 @@ export default function PalermoClient() {
   function openLeaderboard() {
     setLeaderboardOpen(true)
     fetchLeaderboard()
+  }
+
+  async function fetchAdminDashboard() {
+    const session = authSessionRef.current
+    if (!isCreatorProfile(profile) || !session?.access_token) return
+    setAdminLoading(true)
+    setAdminError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_admin_dashboard`, {
+        method: 'POST',
+        headers: authHeaders(session.access_token),
+        body: '{}',
+        cache: 'no-store',
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.message || 'admin_load_failed')
+      setAdminData({
+        summary: data?.summary || {},
+        profiles: Array.isArray(data?.profiles) ? data.profiles : [],
+        rooms: Array.isArray(data?.rooms) ? data.rooms : [],
+        bugs: Array.isArray(data?.bugs) ? data.bugs : [],
+      })
+    } catch {
+      setAdminError(lang === 'el' ? 'Δεν ήταν δυνατή η φόρτωση του admin panel.' : 'Could not load the admin panel.')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  function openAdminPanel() {
+    if (!isCreatorProfile(profile)) return
+    setAdminTab('overview')
+    setAdminSearch('')
+    setAdminError('')
+    setAdminOpen(true)
+    fetchAdminDashboard()
+  }
+
+  async function adminRetireRoom(roomCode) {
+    const session = authSessionRef.current
+    if (!isCreatorProfile(profile) || !session?.access_token || !roomCode) return
+    if (typeof window !== 'undefined' && !window.confirm(lang === 'el'
+      ? `Να αφαιρεθεί το δωμάτιο ${roomCode} από το Palermo;`
+      : `Remove room ${roomCode} from Palermo?`)) return
+
+    setAdminAction(`room:${roomCode}`)
+    setAdminError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_admin_retire_room`, {
+        method: 'POST',
+        headers: authHeaders(session.access_token),
+        body: JSON.stringify({ p_room_code: roomCode }),
+      })
+      if (!res.ok) throw new Error('admin_room_failed')
+      await fetchAdminDashboard()
+    } catch {
+      setAdminError(lang === 'el' ? 'Δεν ήταν δυνατή η αφαίρεση του δωματίου.' : 'Could not remove that room.')
+    } finally {
+      setAdminAction('')
+    }
+  }
+
+  async function adminDeleteBug(reportId) {
+    const session = authSessionRef.current
+    if (!isCreatorProfile(profile) || !session?.access_token || !reportId) return
+    if (typeof window !== 'undefined' && !window.confirm(lang === 'el'
+      ? 'Να διαγραφεί αυτή η αναφορά bug;'
+      : 'Delete this bug report?')) return
+
+    setAdminAction(`bug:${reportId}`)
+    setAdminError('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/palermo_admin_delete_bug_report`, {
+        method: 'POST',
+        headers: authHeaders(session.access_token),
+        body: JSON.stringify({ p_report_id: reportId }),
+      })
+      if (!res.ok) throw new Error('admin_bug_failed')
+      await fetchAdminDashboard()
+    } catch {
+      setAdminError(lang === 'el' ? 'Δεν ήταν δυνατή η διαγραφή της αναφοράς.' : 'Could not delete that bug report.')
+    } finally {
+      setAdminAction('')
+    }
   }
 
   async function openPublicProfile(userId) {
@@ -4180,6 +4271,9 @@ export default function PalermoClient() {
           {screen !== 'language' && <button onClick={() => setScreen('language')} style={{padding:'8px 10px'}}>{lang === 'el' ? 'ΕΛ' : 'EN'}</button>}
           {screen !== 'language' && <button className="howToButton" onClick={() => setHowToOpen(true)}>{lang === 'el' ? 'ΠΩΣ ΠΑΙΖΕΤΑΙ' : 'HOW TO PLAY'}</button>}
           {screen !== 'language' && <button className="leaderboardButton" onClick={openLeaderboard}>{lang === 'el' ? 'ΚΑΤΑΤΑΞΗ' : 'LEADERBOARD'}</button>}
+          {screen !== 'language' && isCreatorProfile(profile) && (
+            <button className="adminButton" onClick={openAdminPanel}>♛ {lang === 'el' ? 'ADMIN' : 'ADMIN'}</button>
+          )}
           {screen !== 'language' && (
             <button className="accountButton" onClick={() => { setAuthMessage(''); setProfileNameDraft(profile?.username || ''); setAuthOpen(true); if (profile) fetchMatchHistory() }}>
               {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile?.username?.[0]?.toUpperCase() || '👤'}</span>}
@@ -4942,6 +5036,151 @@ export default function PalermoClient() {
             )}
           </div>
         </section>
+      )}
+
+      {adminOpen && isCreatorProfile(profile) && (
+        <div className="adminBackdrop" onClick={() => setAdminOpen(false)}>
+          <div className="adminModal card" onClick={e => e.stopPropagation()}>
+            <div className="adminHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // CREATOR CONTROL</div>
+                <h2>{lang === 'el' ? 'ADMIN PANEL' : 'ADMIN PANEL'}</h2>
+                <p>{lang === 'el'
+                  ? 'Γρήγορη διαχείριση παικτών, δωματίων και αναφορών.'
+                  : 'Quick control over players, rooms, and reports.'}</p>
+              </div>
+              <div className="adminHeadActions">
+                <button onClick={fetchAdminDashboard} disabled={adminLoading}>{adminLoading ? '...' : '↻'}</button>
+                <button className="bugClose" onClick={() => setAdminOpen(false)}>×</button>
+              </div>
+            </div>
+
+            <div className="adminTabs">
+              {[
+                ['overview', lang === 'el' ? 'ΕΠΙΣΚΟΠΗΣΗ' : 'OVERVIEW'],
+                ['players', lang === 'el' ? 'ΠΑΙΚΤΕΣ' : 'PLAYERS'],
+                ['rooms', lang === 'el' ? 'ΔΩΜΑΤΙΑ' : 'ROOMS'],
+                ['bugs', lang === 'el' ? 'BUGS' : 'BUG REPORTS'],
+              ].map(([id,label]) => (
+                <button key={id} className={adminTab === id ? 'active' : ''} onClick={() => setAdminTab(id)}>{label}</button>
+              ))}
+            </div>
+
+            {adminError && <div className="errorText adminError">{adminError}</div>}
+            {adminLoading && !adminData?.summary?.profiles && <div className="adminLoading">{lang === 'el' ? 'ΦΟΡΤΩΣΗ ADMIN...' : 'LOADING ADMIN...'}</div>}
+
+            {adminTab === 'overview' && (
+              <div className="adminOverview">
+                <div className="adminMetric"><span>👤</span><b>{adminData.summary?.profiles || 0}</b><small>{lang === 'el' ? 'ΛΟΓΑΡΙΑΣΜΟΙ' : 'ACCOUNTS'}</small></div>
+                <div className="adminMetric"><span>♠</span><b>{adminData.summary?.matches || 0}</b><small>{lang === 'el' ? 'ΠΑΙΧΝΙΔΙΑ' : 'MATCHES'}</small></div>
+                <div className="adminMetric"><span>◉</span><b>{adminData.summary?.active_rooms || 0}</b><small>{lang === 'el' ? 'ΕΝΕΡΓΑ ΔΩΜΑΤΙΑ' : 'ACTIVE ROOMS'}</small></div>
+                <div className="adminMetric"><span>⚠</span><b>{adminData.summary?.bug_reports || 0}</b><small>{lang === 'el' ? 'ΑΝΑΦΟΡΕΣ' : 'BUG REPORTS'}</small></div>
+
+                <div className="adminQuick card">
+                  <small>CREATOR ACCESS</small>
+                  <strong>{profile.username}</strong>
+                  <p>{lang === 'el'
+                    ? 'Αυτό το panel είναι κλειδωμένο στον λογαριασμό Creator και οι admin ενέργειες ελέγχονται ξανά από τη βάση δεδομένων.'
+                    : 'This panel is locked to the Creator account, and admin actions are verified again by the database.'}</p>
+                </div>
+              </div>
+            )}
+
+            {adminTab === 'players' && (
+              <div className="adminSection">
+                <div className="adminToolbar">
+                  <input
+                    value={adminSearch}
+                    onChange={e => setAdminSearch(e.target.value)}
+                    placeholder={lang === 'el' ? 'Αναζήτηση username...' : 'Search username...'}
+                  />
+                  <span>{adminData.profiles.length} {lang === 'el' ? 'ΠΑΙΚΤΕΣ' : 'PLAYERS'}</span>
+                </div>
+                <div className="adminList">
+                  {adminData.profiles
+                    .filter(row => !adminSearch.trim() || String(row.username || '').toLowerCase().includes(adminSearch.trim().toLowerCase()))
+                    .map(row => (
+                    <div className="adminPlayerRow" key={row.id}>
+                      <span className="adminAvatar">{row.avatar_url ? <img src={row.avatar_url} alt="" /> : row.username?.[0]?.toUpperCase()}</span>
+                      <div className="adminPlayerMain">
+                        <div className="adminPlayerName">
+                          <strong>{row.username}</strong>
+                          {isCreatorProfile(row) && <span>♛ CREATOR</span>}
+                        </div>
+                        <small>{row.games_played || 0} G · {row.wins || 0} W · {row.mvps || 0} MVP · {(row.achievements || []).length} BADGES</small>
+                      </div>
+                      <button onClick={() => { setAdminOpen(false); openPublicProfile(row.id) }}>{lang === 'el' ? 'ΠΡΟΦΙΛ' : 'PROFILE'}</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminTab === 'rooms' && (
+              <div className="adminSection">
+                <div className="adminSectionTitle">
+                  <div><small>LIVE REGISTRY</small><strong>{lang === 'el' ? 'ΕΝΕΡΓΑ ΔΩΜΑΤΙΑ' : 'ACTIVE ROOMS'}</strong></div>
+                  <b>{adminData.rooms.length}</b>
+                </div>
+                <div className="adminList">
+                  {adminData.rooms.length === 0 && <div className="adminEmpty">{lang === 'el' ? 'Δεν υπάρχουν ενεργά δωμάτια.' : 'No active rooms.'}</div>}
+                  {adminData.rooms.map(room => (
+                    <div className="adminRoomRow" key={room.room_code}>
+                      <div>
+                        <strong>{room.room_name || room.room_code}</strong>
+                        <small>{room.room_code} // HOST {room.host_name || '—'} // {room.started ? 'IN MATCH' : 'LOBBY'}</small>
+                      </div>
+                      <div className="adminRoomNumbers">
+                        <span>{room.player_count}/{room.max_players} P</span>
+                        <span>{room.spectator_count}/{room.max_spectators} S</span>
+                      </div>
+                      <button
+                        className="danger"
+                        disabled={adminAction === `room:${room.room_code}`}
+                        onClick={() => adminRetireRoom(room.room_code)}
+                      >
+                        {adminAction === `room:${room.room_code}` ? '...' : (lang === 'el' ? 'ΑΦΑΙΡΕΣΗ' : 'REMOVE')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminTab === 'bugs' && (
+              <div className="adminSection">
+                <div className="adminSectionTitle">
+                  <div><small>PLAYER REPORTS</small><strong>{lang === 'el' ? 'BUG REPORTS' : 'BUG REPORTS'}</strong></div>
+                  <b>{adminData.bugs.length}</b>
+                </div>
+                <div className="adminBugList">
+                  {adminData.bugs.length === 0 && <div className="adminEmpty">{lang === 'el' ? 'Δεν υπάρχουν αναφορές.' : 'No bug reports.'}</div>}
+                  {adminData.bugs.map(report => (
+                    <article className="adminBugCard" key={report.id}>
+                      <div className="adminBugTop">
+                        <span>{String(report.category || 'other').toUpperCase()}</span>
+                        <small>{new Date(report.created_at).toLocaleString(lang === 'el' ? 'el-GR' : 'en-GB')}</small>
+                      </div>
+                      <p>{report.description}</p>
+                      <div className="adminBugMeta">
+                        <span>{report.player_name || 'Anonymous'}</span>
+                        {report.room_code && <span>ROOM {report.room_code}</span>}
+                        {report.screen && <span>{String(report.screen).toUpperCase()}</span>}
+                      </div>
+                      <button
+                        className="danger"
+                        disabled={adminAction === `bug:${report.id}`}
+                        onClick={() => adminDeleteBug(report.id)}
+                      >
+                        {adminAction === `bug:${report.id}` ? '...' : (lang === 'el' ? 'ΔΙΑΓΡΑΦΗ' : 'DELETE REPORT')}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {achievementToast?.badge && (
