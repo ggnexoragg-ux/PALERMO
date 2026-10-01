@@ -2582,3 +2582,19 @@ html,body{background:var(--palermo-bg)}
   .achievementToast{right:16px;bottom:18px}
   .leaderboardBadgePreview i:nth-of-type(n+3){display:none}
 }
+
+
+/* Creator badge */
+.profileNameLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.specialProfileTag{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;font:900 7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.13em;white-space:nowrap}
+.specialProfileTag.creator{color:#f3d48f;border:1px solid #8b693d;background:linear-gradient(180deg,rgba(93,63,28,.72),rgba(31,22,14,.92));box-shadow:0 0 16px rgba(195,155,91,.08)}
+.specialBadgeShowcase{display:flex;align-items:center;gap:14px;padding:14px 16px;margin-top:8px;border:1px solid #6d5032;border-radius:5px;background:radial-gradient(circle at 8% 20%,rgba(195,155,91,.15),transparent 38%),linear-gradient(115deg,rgba(66,43,22,.95),rgba(22,17,13,.98) 48%,rgba(12,12,13,.99));box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 14px 38px rgba(0,0,0,.22)}
+.specialBadgeSeal{width:54px;height:54px;flex:0 0 54px;display:grid;place-items:center;border:1px solid #9b7643;border-radius:50%;color:#f2d28d;background:radial-gradient(circle at 50% 38%,rgba(220,177,99,.18),transparent 52%),#14100d;box-shadow:inset 0 0 0 4px #0d0c0b,0 0 22px rgba(195,155,91,.09);font-size:25px}
+.specialBadgeShowcase>div{min-width:0;display:grid;gap:3px}
+.specialBadgeShowcase small{color:#9a805c;font:800 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em}
+.specialBadgeShowcase strong{color:#f0dfbe;font:900 17px/1 Georgia,"Times New Roman",serif;letter-spacing:.06em}
+.specialBadgeShowcase p{margin:0;color:#a69784;font-size:10px;line-height:1.4}
+.leaderboardNameLine{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.leaderboardCreatorTag{display:inline-flex;align-items:center;padding:3px 5px;border:1px solid #725537;border-radius:999px;background:#1c150f;color:#d9b779;font:900 6px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.09em}
+.leaderboardBadgePreview .creatorPreview{border-color:#8d6b3e;color:#e1bc75;background:#21170f}
+@media(max-width:560px){.specialBadgeShowcase{padding:12px;gap:11px}.specialBadgeSeal{width:48px;height:48px;flex-basis:48px}}
