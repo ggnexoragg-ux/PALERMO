@@ -2926,3 +2926,448 @@ html,body{background:var(--palermo-bg)}
   .adminToolbar{align-items:stretch;flex-direction:column}
   .adminToolbar>span{align-self:flex-end}
 }
+
+
+/* Mobile UI pass */
+@media(max-width:640px){
+  html,body{width:100%;max-width:100%;overflow-x:hidden}
+  .palermoShell{
+    width:100%;
+    min-height:100dvh;
+    padding:12px 12px calc(84px + env(safe-area-inset-bottom));
+    overflow-x:hidden;
+  }
+
+  /* Header: clean two-row mobile layout */
+  .palermoTop{
+    width:100%;
+    padding:8px 0 18px!important;
+    display:grid!important;
+    grid-template-columns:1fr;
+    gap:10px!important;
+    align-items:start!important;
+  }
+  .palermoBrand{
+    width:100%;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .brandLogoImage{
+    width:38px!important;
+    height:38px!important;
+    flex-basis:38px!important;
+  }
+  .brandCopy{
+    min-width:0;
+  }
+  .brandCopy b{
+    font-size:14px;
+  }
+  .brandCopy small{
+    display:block;
+    max-width:none!important;
+    font-size:7px!important;
+    letter-spacing:.12em!important;
+    white-space:nowrap!important;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .palermoTop>div:last-child{
+    width:100%;
+    display:flex!important;
+    align-items:center!important;
+    gap:6px!important;
+    overflow-x:auto;
+    flex-wrap:nowrap!important;
+    padding:1px 0 5px;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  .palermoTop>div:last-child::-webkit-scrollbar{display:none}
+  .palermoTop>div:last-child>button,
+  .palermoTop>div:last-child>.palermoBadge{
+    flex:0 0 auto;
+  }
+  .palermoTop .howToButton,
+  .palermoTop .leaderboardButton,
+  .palermoTop .adminButton,
+  .palermoTop>div:last-child>button{
+    min-height:38px!important;
+    padding:8px 10px!important;
+    font-size:8px!important;
+  }
+  .accountButton{
+    max-width:132px!important;
+    min-height:38px!important;
+    padding:5px 8px!important;
+  }
+  .accountButton img,.accountButton>span{
+    width:24px!important;
+    height:24px!important;
+  }
+  .accountButton b{
+    max-width:78px!important;
+    font-size:9px!important;
+  }
+  .palermoBadge{
+    min-height:38px;
+    display:flex;
+    align-items:center;
+    padding:7px 9px!important;
+    font-size:7px!important;
+    white-space:nowrap;
+  }
+
+  /* Home */
+  .palermoHero{
+    width:100%;
+    padding:14px 0 20px!important;
+  }
+  .caseKicker{
+    max-width:100%;
+  }
+  .palermoHero h1{
+    font-size:clamp(44px,16vw,62px)!important;
+    line-height:.88!important;
+    overflow-wrap:anywhere;
+  }
+  .palermoHero>p{
+    font-size:14px!important;
+    line-height:1.5!important;
+  }
+  .mafiaTagline{
+    align-items:flex-start!important;
+  }
+  .mafiaTagline b{
+    font-size:10px!important;
+    line-height:1.45!important;
+  }
+  .palermoEntry{
+    width:100%;
+    max-width:100%!important;
+    margin-top:20px!important;
+    padding:16px!important;
+  }
+  .palermoActions,.micActions{
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+  }
+  .palermoActions button,.micActions button{
+    width:100%!important;
+    min-height:46px;
+  }
+  .modeSwitch{
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+  }
+  .featureStrip{
+    gap:6px!important;
+  }
+  .featureStrip span{
+    font-size:8px!important;
+    padding:7px 8px!important;
+  }
+
+  /* Inputs and touch targets */
+  .palermoShell input,
+  .palermoShell textarea{
+    min-width:0;
+    font-size:16px!important;
+  }
+  .palermoShell button{
+    min-height:42px;
+    touch-action:manipulation;
+  }
+
+  /* Join / room browser */
+  .palermoPanelWrap{
+    width:100%;
+    max-width:100%!important;
+    padding-top:14px!important;
+  }
+  .joinCard{
+    width:100%;
+    padding:18px!important;
+  }
+  .joinCard h2{
+    font-size:38px!important;
+    line-height:.95!important;
+  }
+  .codeInput{
+    font-size:22px!important;
+    letter-spacing:.14em!important;
+  }
+  .roomBrowserWrap{
+    width:100%!important;
+  }
+  .roomBrowserHero{
+    margin-top:10px!important;
+    padding:16px!important;
+    gap:16px!important;
+  }
+  .roomBrowserHero h2{
+    font-size:34px!important;
+  }
+  .roomBrowserHeroActions{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    width:100%!important;
+  }
+  .roomBrowserHeroActions button,
+  .roomBrowserCount{
+    width:100%;
+    min-width:0!important;
+  }
+  .roomBrowserCard{
+    padding:14px!important;
+  }
+  .roomBrowserIdentity h3{
+    font-size:22px!important;
+  }
+  .roomBrowserStats{
+    grid-template-columns:1fr 1fr!important;
+  }
+  .roomBrowserStats>div:nth-child(3){
+    grid-column:1/-1;
+    border-top:1px solid #332c25;
+    border-right:0!important;
+  }
+  .roomBrowserManual{
+    flex-direction:column;
+    align-items:stretch!important;
+  }
+  .roomBrowserManual button{width:100%}
+
+  /* Lobby */
+  .lobbyWrap,.gameWrap,.roleRevealWrap{
+    width:100%;
+    max-width:100%!important;
+  }
+  .lobbyHead,.gameTop{
+    margin-bottom:14px!important;
+  }
+  .lobbyHead h2,.gameTop h2{
+    font-size:38px!important;
+    line-height:.95!important;
+  }
+  .lobbyHeadActions{
+    width:100%;
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    gap:8px!important;
+  }
+  .lobbyHeadActions button{
+    width:100%;
+    min-width:0;
+  }
+  .lobbyGrid,.gameGrid{
+    grid-template-columns:1fr!important;
+    gap:12px!important;
+  }
+  .playersCard,.settingsCard,.micCard,.phaseCard,.miniRole,.voiceBox,.killerBox,
+  .playerBoard,.interrogationPanel,.spectatorChat{
+    padding:14px!important;
+  }
+  .playerRow{
+    grid-template-columns:34px minmax(0,1fr) 10px!important;
+    gap:8px!important;
+  }
+  .playerRow>button{
+    grid-column:1/-1;
+    width:100%;
+  }
+  .roleConfigRow{
+    gap:8px;
+  }
+  .roleConfigRow>span{
+    min-width:0;
+    font-size:12px!important;
+  }
+  .roleConfigRow>div{
+    flex:0 0 auto;
+  }
+  .roleConfigRow button{
+    min-width:38px;
+    min-height:38px;
+  }
+  .micCard,.lobbyFooter{
+    gap:10px!important;
+  }
+
+  /* Gameplay */
+  .playerBoard{
+    position:static!important;
+    top:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+    order:2;
+  }
+  .interrogationPanel{
+    min-height:0!important;
+    order:1;
+  }
+  .sideStack{
+    order:3;
+    gap:12px!important;
+  }
+  .interrogationPanel h3{
+    font-size:28px!important;
+  }
+  .bigIcon{
+    font-size:54px!important;
+  }
+  .discussionTimer{
+    font-size:44px!important;
+    margin:8px 0!important;
+  }
+  .targetGrid,.voteList{
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+    margin:14px 0!important;
+  }
+  .targetGrid button,.voteList button{
+    width:100%;
+    min-height:46px;
+  }
+  .dayChatBox form,.spectatorChat form,.killerBox form{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  .dayChatBox form button,.spectatorChat form button,.killerBox form button{
+    width:100%;
+  }
+  .dayMessages,.spectatorMessages,.killerMessages{
+    max-height:190px!important;
+  }
+  .daySkipInfo{
+    flex-direction:column;
+    gap:5px!important;
+  }
+  .phaseCard{
+    min-height:0!important;
+  }
+
+  /* Role reveal */
+  .roleReveal{
+    padding:18px!important;
+  }
+  .roleReveal h2{
+    font-size:38px!important;
+  }
+  .mafiaOrders{
+    margin:-18px -18px 20px!important;
+  }
+  .roleEmoji{
+    width:82px!important;
+    height:82px!important;
+    font-size:42px!important;
+  }
+  .roleRevealLine{
+    gap:8px!important;
+  }
+  .roleRevealLine strong{
+    max-width:55%!important;
+  }
+
+  /* Profile / leaderboard / admin / help modals */
+  .authBackdrop,.leaderboardBackdrop,.howToBackdrop,.bugModalBackdrop,.adminBackdrop{
+    padding:0!important;
+    align-items:end!important;
+  }
+  .authModal,.leaderboardModal,.howToModal,.bugModal,.adminModal,.publicProfileModal{
+    width:100%!important;
+    max-width:100%!important;
+    max-height:94dvh!important;
+    border-radius:12px 12px 0 0!important;
+    padding:16px!important;
+    padding-bottom:calc(18px + env(safe-area-inset-bottom))!important;
+  }
+  .authHead h2,.leaderboardHead h2,.howToHead h2,.adminHead h2{
+    font-size:28px!important;
+  }
+  .profileHero{
+    gap:11px!important;
+    padding:12px!important;
+  }
+  .profileAvatarPicker img,.profileAvatarPicker>span{
+    width:58px!important;
+    height:58px!important;
+    border-radius:14px!important;
+  }
+  .profileHero strong{
+    font-size:17px!important;
+  }
+  .profileStats{
+    grid-template-columns:1fr 1fr!important;
+    gap:7px!important;
+  }
+  .profileStats>div:last-child{
+    grid-column:1/-1;
+  }
+  .achievementGrid{
+    grid-template-columns:1fr!important;
+    max-height:330px!important;
+  }
+  .achievementBadge{
+    min-height:70px!important;
+  }
+  .matchHistoryRow{
+    grid-template-columns:58px minmax(0,1fr)!important;
+  }
+  .matchHistoryBadges{
+    grid-column:2!important;
+  }
+  .leaderboardRow{
+    padding:9px!important;
+  }
+  .leaderboardPlayer{
+    gap:7px!important;
+  }
+  .leaderboardAvatar{
+    width:30px!important;
+    height:30px!important;
+  }
+  .adminHead{
+    margin-bottom:12px!important;
+  }
+  .adminTabs{
+    position:sticky;
+    top:-16px;
+    z-index:4;
+    padding:8px 0;
+    background:linear-gradient(180deg,#181411 78%,transparent);
+  }
+  .adminOverview{
+    grid-template-columns:1fr 1fr!important;
+  }
+  .adminMetric{
+    min-height:92px!important;
+  }
+
+  /* Keep floating controls from blocking gameplay */
+  .bugReportFab{
+    left:10px!important;
+    bottom:calc(10px + env(safe-area-inset-bottom))!important;
+    min-height:38px!important;
+    padding:8px 10px!important;
+    font-size:8px!important;
+  }
+  .palermoCredit{
+    right:10px!important;
+    bottom:calc(10px + env(safe-area-inset-bottom))!important;
+    font-size:7px!important;
+    padding:6px 8px!important;
+  }
+}
+
+@media(max-width:390px){
+  .palermoShell{padding-left:9px;padding-right:9px}
+  .palermoHero h1{font-size:43px!important}
+  .palermoTop>div:last-child{gap:5px!important}
+  .lobbyHeadActions{grid-template-columns:1fr!important}
+  .roomBrowserHeroActions{grid-template-columns:1fr!important}
+  .adminOverview{grid-template-columns:1fr!important}
+  .profileStats{grid-template-columns:1fr 1fr!important}
+}
