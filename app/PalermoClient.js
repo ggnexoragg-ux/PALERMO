@@ -4022,7 +4022,7 @@ export default function PalermoClient() {
       <div className="palermoNoise" />
       <header className="palermoTop">
         <div className="palermoBrand">
-          <span className="brandSeal">P</span>
+          <img className="brandLogoImage" src="/palermo-logo.svg" alt="Palermo Online" />
           <span className="brandCopy"><b>PALERMO</b><small>{lang === 'el' ? 'Η ΝΥΧΤΑ ΕΧΕΙ ΚΑΝΟΝΕΣ' : 'THE NIGHT HAS RULES'}</small></span>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
