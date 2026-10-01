@@ -14,6 +14,61 @@ const DEFAULT_ROLES = [
 
 const citizen = { id: 'citizen', label: 'Citizen', emoji: '👤' }
 
+const ACHIEVEMENTS = [
+  { id:'first_case', icon:'🗂️', tier:'bronze', en:['First Case','Finish your first Palermo match.'], el:['Πρώτη Υπόθεση','Ολοκλήρωσε το πρώτο σου παιχνίδι Palermo.'] },
+  { id:'regular', icon:'🪑', tier:'bronze', en:['Regular at the Table','Play 5 matches.'], el:['Θαμώνας στο Τραπέζι','Παίξε 5 παιχνίδια.'] },
+  { id:'known_face', icon:'🎩', tier:'silver', en:['Known Face','Play 10 matches.'], el:['Γνώριμο Πρόσωπο','Παίξε 10 παιχνίδια.'] },
+  { id:'made_man', icon:'♠️', tier:'gold', en:['Made Man','Play 25 matches.'], el:['Made Man','Παίξε 25 παιχνίδια.'] },
+  { id:'capo', icon:'👑', tier:'gold', en:['Capo','Play 50 matches.'], el:['Capo','Παίξε 50 παιχνίδια.'] },
+  { id:'palermo_legend', icon:'🌙', tier:'legendary', en:['Legend of Palermo','Play 100 matches.'], el:['Θρύλος του Palermo','Παίξε 100 παιχνίδια.'] },
+
+  { id:'first_win', icon:'🥃', tier:'bronze', en:['A Taste of Victory','Win your first match.'], el:['Γεύση Νίκης','Κέρδισε το πρώτο σου παιχνίδι.'] },
+  { id:'five_wins', icon:'♦️', tier:'bronze', en:['Five Favors','Win 5 matches.'], el:['Πέντε Χάρες','Κέρδισε 5 παιχνίδια.'] },
+  { id:'ten_wins', icon:'🏆', tier:'silver', en:['Respect Earned','Win 10 matches.'], el:['Κερδισμένος Σεβασμός','Κέρδισε 10 παιχνίδια.'] },
+  { id:'twentyfive_wins', icon:'💼', tier:'gold', en:['Business Is Good','Win 25 matches.'], el:['Οι Δουλειές Πάνε Καλά','Κέρδισε 25 παιχνίδια.'] },
+  { id:'fifty_wins', icon:'💎', tier:'legendary', en:['Untouchable Record','Win 50 matches.'], el:['Άγγιχτο Ρεκόρ','Κέρδισε 50 παιχνίδια.'] },
+
+  { id:'first_mvp', icon:'⭐', tier:'silver', en:['Center of Attention','Earn your first MVP.'], el:['Στο Επίκεντρο','Κέρδισε το πρώτο σου MVP.'] },
+  { id:'five_mvp', icon:'🌟', tier:'gold', en:['Headliner','Earn 5 MVP awards.'], el:['Πρωταγωνιστής','Κέρδισε 5 MVP.'] },
+  { id:'ten_mvp', icon:'🏅', tier:'legendary', en:['The Don','Earn 10 MVP awards.'], el:['The Don','Κέρδισε 10 MVP.'] },
+
+  { id:'three_streak', icon:'🔥', tier:'silver', en:['Hot Hand','Win 3 matches in a row.'], el:['Καυτό Χέρι','Κέρδισε 3 παιχνίδια στη σειρά.'] },
+  { id:'five_streak', icon:'♨️', tier:'gold', en:['On a Roll','Win 5 matches in a row.'], el:['Ασταμάτητος','Κέρδισε 5 παιχνίδια στη σειρά.'] },
+  { id:'perfect_start', icon:'🎯', tier:'gold', en:['Perfect Start','Win your first 3 recorded matches.'], el:['Τέλειο Ξεκίνημα','Κέρδισε τα πρώτα 3 καταγεγραμμένα παιχνίδια σου.'] },
+  { id:'high_roller', icon:'🎲', tier:'gold', en:['High Roller','Keep a 70% win rate after 10+ matches.'], el:['High Roller','Κράτησε 70% ποσοστό νίκης μετά από 10+ παιχνίδια.'] },
+  { id:'iron_nerves', icon:'🧊', tier:'legendary', en:['Nerves of Steel','Keep a 60% win rate after 25+ matches.'], el:['Ατσάλινα Νεύρα','Κράτησε 60% ποσοστό νίκης μετά από 25+ παιχνίδια.'] },
+
+  { id:'citizen_win', icon:'👤', tier:'bronze', en:['Voice of the City','Win as Citizen.'], el:['Φωνή της Πόλης','Κέρδισε ως Πολίτης.'] },
+  { id:'visible_killer_win', icon:'🔪', tier:'silver', en:['No Alibi','Win as Revealed Killer.'], el:['Χωρίς Άλλοθι','Κέρδισε ως Φανερός Δολοφόνος.'] },
+  { id:'hidden_killer_win', icon:'🗡️', tier:'silver', en:['Ghost in the Room','Win as Hidden Killer.'], el:['Φάντασμα στο Δωμάτιο','Κέρδισε ως Κρυφός Δολοφόνος.'] },
+  { id:'detective_win', icon:'🕵️', tier:'silver', en:['Case Solved','Win as Detective.'], el:['Υπόθεση Λύθηκε','Κέρδισε ως Ντετέκτιβ.'] },
+  { id:'doctor_win', icon:'🩺', tier:'silver', en:['Clean Hands','Win as Doctor.'], el:['Καθαρά Χέρια','Κέρδισε ως Γιατρός.'] },
+  { id:'lover_win', icon:'❤️', tier:'silver', en:['Till Death','Win as Lover.'], el:['Μέχρι Θανάτου','Κέρδισε ως Ερωτευμένος.'] },
+  { id:'kamikaze_win', icon:'💣', tier:'silver', en:['Last Laugh','Win as Kamikaze.'], el:['Το Τελευταίο Γέλιο','Κέρδισε ως Καμικάζε.'] },
+  { id:'madness_win', icon:'🌀', tier:'gold', en:['Beautiful Madness','Win as Madness.'], el:['Όμορφη Τρέλα','Κέρδισε ως Τρέλα.'] },
+
+  { id:'citizen_master', icon:'🏙️', tier:'gold', en:['City Loyalist','Win 3 times as Citizen.'], el:['Πιστός στην Πόλη','Κέρδισε 3 φορές ως Πολίτης.'] },
+  { id:'killer_master', icon:'🩸', tier:'legendary', en:['Family Business','Win 5 times as either Killer.'], el:['Οικογενειακή Δουλειά','Κέρδισε 5 φορές ως Δολοφόνος.'] },
+  { id:'detective_master', icon:'🔎', tier:'gold', en:['Sharp Eye','Win 3 times as Detective.'], el:['Κοφτερό Μάτι','Κέρδισε 3 φορές ως Ντετέκτιβ.'] },
+  { id:'doctor_master', icon:'⚕️', tier:'gold', en:['Night Shift','Win 3 times as Doctor.'], el:['Νυχτερινή Βάρδια','Κέρδισε 3 φορές ως Γιατρός.'] },
+  { id:'lover_master', icon:'💌', tier:'gold', en:['Partners in Crime','Win 3 times as Lover.'], el:['Συνένοχοι','Κέρδισε 3 φορές ως Ερωτευμένος.'] },
+  { id:'kamikaze_master', icon:'🧨', tier:'gold', en:['Powder Keg','Win 3 times as Kamikaze.'], el:['Πυριτιδαποθήκη','Κέρδισε 3 φορές ως Καμικάζε.'] },
+  { id:'madness_master', icon:'🎭', tier:'legendary', en:['Agent of Chaos','Win 3 times as Madness.'], el:['Πράκτορας του Χάους','Κέρδισε 3 φορές ως Τρέλα.'] },
+
+  { id:'long_night', icon:'🕰️', tier:'bronze', en:['Long Night','Finish a match lasting 5+ rounds.'], el:['Μεγάλη Νύχτα','Ολοκλήρωσε παιχνίδι 5+ γύρων.'] },
+  { id:'endless_night', icon:'🌌', tier:'gold', en:['The Endless Night','Finish a match lasting 8+ rounds.'], el:['Η Ατελείωτη Νύχτα','Ολοκλήρωσε παιχνίδι 8+ γύρων.'] },
+  { id:'big_table', icon:'🍷', tier:'bronze', en:['Full Back Room','Play a match with 8+ players.'], el:['Γεμάτο Πίσω Δωμάτιο','Παίξε παιχνίδι με 8+ παίκτες.'] },
+  { id:'full_table', icon:'♣️', tier:'silver', en:['Everybody Knows Somebody','Play a match with 10+ players.'], el:['Όλοι Ξέρουν Κάποιον','Παίξε παιχνίδι με 10+ παίκτες.'] },
+  { id:'clutch_win', icon:'🃏', tier:'gold', en:['Against the Table','Win an 8+ player match lasting 4+ rounds.'], el:['Κόντρα στο Τραπέζι','Κέρδισε παιχνίδι 8+ παικτών που κράτησε 4+ γύρους.'] },
+
+  { id:'role_collector', icon:'🃏', tier:'silver', en:['Many Faces','Play 5 different roles.'], el:['Πολλά Πρόσωπα','Παίξε 5 διαφορετικούς ρόλους.'] },
+  { id:'all_roles', icon:'🎴', tier:'gold', en:['Every Seat at the Table','Play every role at least once.'], el:['Κάθε Θέση στο Τραπέζι','Παίξε κάθε ρόλο τουλάχιστον μία φορά.'] },
+  { id:'versatile_winner', icon:'🎖️', tier:'gold', en:['Versatile','Win with 4 different roles.'], el:['Ευέλικτος','Κέρδισε με 4 διαφορετικούς ρόλους.'] },
+  { id:'master_of_masks', icon:'🎭', tier:'legendary', en:['Master of Masks','Win with 6 different roles.'], el:['Άρχοντας των Προσωπείων','Κέρδισε με 6 διαφορετικούς ρόλους.'] },
+]
+
+const achievementById = id => ACHIEVEMENTS.find(item => item.id === id)
+
 const SUPABASE_URL = 'https://xwckthedqrgbnfvwccyr.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3Y2t0aGVkcXJnYm5mdndjY3lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3Nzk3NDgsImV4cCI6MjEwNjM1NTc0OH0.kRANBc_vOD6epHHqWrGkJamgxN9enlY_siBnzmpakNM'
 const REGISTRY_HEADERS = {
@@ -570,6 +625,11 @@ export default function PalermoClient() {
   const [daySkipCount, setDaySkipCount] = useState(0)
   const [daySkipRequired, setDaySkipRequired] = useState(0)
   const [daySkipLocked, setDaySkipLocked] = useState(false)
+  const [publicProfile, setPublicProfile] = useState(null)
+  const [publicProfileOpen, setPublicProfileOpen] = useState(false)
+  const [publicProfileLoading, setPublicProfileLoading] = useState(false)
+  const [publicProfileError, setPublicProfileError] = useState('')
+  const [achievementToast, setAchievementToast] = useState(null)
 
   const peerRef = useRef(null)
   const hostConnRef = useRef(null)
@@ -991,7 +1051,7 @@ export default function PalermoClient() {
     setLeaderboardLoading(true)
     setLeaderboardError('')
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?select=id,username,avatar_url,games_played,wins,losses,mvps&games_played=gt.0&order=wins.desc,mvps.desc,games_played.asc&limit=100`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/palermo_profiles?select=id,username,avatar_url,games_played,wins,losses,mvps,achievements&games_played=gt.0&order=wins.desc,mvps.desc,games_played.asc&limit=100`, {
         headers: REGISTRY_HEADERS,
         cache: 'no-store',
       })
@@ -1009,6 +1069,37 @@ export default function PalermoClient() {
   function openLeaderboard() {
     setLeaderboardOpen(true)
     fetchLeaderboard()
+  }
+
+  async function openPublicProfile(userId) {
+    if (!userId) return
+    if (profile?.id === userId) {
+      setLeaderboardOpen(false)
+      setAuthMessage('')
+      setProfileNameDraft(profile?.username || '')
+      setAuthOpen(true)
+      fetchMatchHistory()
+      return
+    }
+
+    setPublicProfileOpen(true)
+    setPublicProfileLoading(true)
+    setPublicProfileError('')
+    setPublicProfile(null)
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/palermo_profiles?id=eq.${encodeURIComponent(userId)}&select=id,username,avatar_url,games_played,wins,losses,mvps,achievements&limit=1`,
+        { headers: REGISTRY_HEADERS, cache: 'no-store' }
+      )
+      if (!res.ok) throw new Error('profile_failed')
+      const rows = await res.json()
+      if (!rows?.[0]) throw new Error('profile_missing')
+      setPublicProfile(rows[0])
+    } catch {
+      setPublicProfileError(lang === 'el' ? 'Δεν ήταν δυνατή η φόρτωση του προφίλ.' : 'Could not load this profile.')
+    } finally {
+      setPublicProfileLoading(false)
+    }
   }
 
   function didRoleWin(winner, roleId) {
@@ -1042,7 +1133,16 @@ export default function PalermoClient() {
       if (!res.ok) throw new Error('stats_update_failed')
       const data = await res.json()
       const updated = Array.isArray(data) ? data[0] : data
-      if (updated?.id) setProfile(updated)
+      if (updated?.id) {
+        const previous = new Set(profile?.achievements || [])
+        const unlocked = (updated.achievements || []).filter(id => !previous.has(id))
+        setProfile(updated)
+        if (unlocked.length) {
+          const badge = achievementById(unlocked[unlocked.length - 1])
+          setAchievementToast({ badge, extra: Math.max(0, unlocked.length - 1) })
+          setTimeout(() => setAchievementToast(null), 5000)
+        }
+      }
       fetchMatchHistory()
     } catch {
       matchResultRecordedRef.current = false
@@ -4828,6 +4928,17 @@ export default function PalermoClient() {
         </section>
       )}
 
+      {achievementToast?.badge && (
+        <div className={`achievementToast ${achievementToast.badge.tier}`}>
+          <span>{achievementToast.badge.icon}</span>
+          <div>
+            <small>{lang === 'el' ? 'ΝΕΟ ACHIEVEMENT' : 'ACHIEVEMENT UNLOCKED'}</small>
+            <strong>{(lang === 'el' ? achievementToast.badge.el : achievementToast.badge.en)[0]}</strong>
+            {achievementToast.extra > 0 && <i>+{achievementToast.extra} {lang === 'el' ? 'ακόμα' : 'more'}</i>}
+          </div>
+        </div>
+      )}
+
       {leaderboardOpen && (
         <div className="leaderboardBackdrop" onClick={() => setLeaderboardOpen(false)}>
           <div className="leaderboardModal card" onClick={e => e.stopPropagation()}>
@@ -4853,11 +4964,27 @@ export default function PalermoClient() {
               {!leaderboardLoading && leaderboardRows.map((row, index) => {
                 const rate = row.games_played > 0 ? Math.round((row.wins / row.games_played) * 100) : 0
                 return (
-                  <div className={`leaderboardRow ${profile?.id === row.id ? 'isMe' : ''}`} key={row.id}>
+                  <div
+                    className={`leaderboardRow leaderboardRowClickable ${profile?.id === row.id ? 'isMe' : ''}`}
+                    key={row.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openPublicProfile(row.id)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') openPublicProfile(row.id) }}
+                  >
                     <b className="leaderboardRank">{index + 1}</b>
                     <div className="leaderboardPlayer">
                       <span className="leaderboardAvatar">{row.avatar_url ? <img src={row.avatar_url} alt="" /> : row.username?.[0]?.toUpperCase()}</span>
-                      <strong>{row.username}{profile?.id === row.id ? (lang === 'el' ? ' (ΕΣΥ)' : ' (YOU)') : ''}</strong>
+                      <div className="leaderboardPlayerCopy">
+                        <strong>{row.username}{profile?.id === row.id ? (lang === 'el' ? ' (ΕΣΥ)' : ' (YOU)') : ''}</strong>
+                        <span className="leaderboardBadgePreview">
+                          {(row.achievements || []).slice(-3).map(id => {
+                            const badge = achievementById(id)
+                            return badge ? <i key={id} title={(lang === 'el' ? badge.el : badge.en)[0]}>{badge.icon}</i> : null
+                          })}
+                          {!!row.achievements?.length && <small>{row.achievements.length}</small>}
+                        </span>
+                      </div>
                     </div>
                     <b>{row.wins || 0}</b>
                     <b>{row.mvps || 0}</b>
@@ -4871,6 +4998,73 @@ export default function PalermoClient() {
             <button className="wide" onClick={fetchLeaderboard} disabled={leaderboardLoading}>
               {lang === 'el' ? 'ΑΝΑΝΕΩΣΗ' : 'REFRESH'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {publicProfileOpen && (
+        <div className="authBackdrop" onClick={() => setPublicProfileOpen(false)}>
+          <div className="authModal publicProfileModal card" onClick={e => e.stopPropagation()}>
+            <div className="authHead">
+              <div>
+                <div className="palermoEyebrow">PALERMO // PUBLIC PROFILE</div>
+                <h2>{publicProfile?.username || (lang === 'el' ? 'ΠΡΟΦΙΛ ΠΑΙΚΤΗ' : 'PLAYER PROFILE')}</h2>
+              </div>
+              <button className="bugClose" onClick={() => setPublicProfileOpen(false)}>×</button>
+            </div>
+
+            {publicProfileLoading && <div className="matchHistoryEmpty">{lang === 'el' ? 'ΦΟΡΤΩΣΗ...' : 'LOADING...'}</div>}
+            {!publicProfileLoading && publicProfileError && <div className="errorText">{publicProfileError}</div>}
+            {!publicProfileLoading && publicProfile && (
+              <div className="profilePanel">
+                <div className="profileHero publicProfileHero">
+                  <div className="profileAvatarPicker publicAvatar">
+                    {publicProfile.avatar_url ? <img src={publicProfile.avatar_url} alt="" /> : <span>{publicProfile.username?.[0]?.toUpperCase() || 'P'}</span>}
+                  </div>
+                  <div>
+                    <strong>{publicProfile.username}</strong>
+                    <small>{lang === 'el' ? 'ΠΑΙΚΤΗΣ PALERMO' : 'PALERMO PLAYER'}</small>
+                    <span>{(publicProfile.achievements || []).length} {lang === 'el' ? 'BADGES ΞΕΚΛΕΙΔΩΜΕΝΑ' : 'BADGES UNLOCKED'}</span>
+                  </div>
+                </div>
+
+                <div className="profileStats">
+                  <div><b>{publicProfile.games_played || 0}</b><span>{lang === 'el' ? 'ΠΑΙΧΝΙΔΙΑ' : 'GAMES'}</span></div>
+                  <div><b>{publicProfile.wins || 0}</b><span>{lang === 'el' ? 'ΝΙΚΕΣ' : 'WINS'}</span></div>
+                  <div><b>{publicProfile.losses || 0}</b><span>{lang === 'el' ? 'ΗΤΤΕΣ' : 'LOSSES'}</span></div>
+                  <div><b>{publicProfile.mvps || 0}</b><span>MVP</span></div>
+                  <div><b>{publicProfile.games_played > 0 ? Math.round(((publicProfile.wins || 0) / publicProfile.games_played) * 100) : 0}%</b><span>{lang === 'el' ? 'ΠΟΣΟΣΤΟ ΝΙΚΗΣ' : 'WIN RATE'}</span></div>
+                </div>
+
+                <div className="achievementBlock publicAchievements">
+                  <div className="achievementHead">
+                    <div>
+                      <small>{lang === 'el' ? 'ΚΕΡΔΙΣΜΕΝΑ BADGES' : 'EARNED BADGES'}</small>
+                      <strong>ACHIEVEMENTS</strong>
+                    </div>
+                    <b>{(publicProfile.achievements || []).length}/{ACHIEVEMENTS.length}</b>
+                  </div>
+                  {(publicProfile.achievements || []).length ? (
+                    <div className="achievementGrid publicAchievementGrid">
+                      {(publicProfile.achievements || []).map(id => {
+                        const badge = achievementById(id)
+                        if (!badge) return null
+                        const copy = lang === 'el' ? badge.el : badge.en
+                        return (
+                          <div className={`achievementBadge ${badge.tier} unlocked`} key={badge.id}>
+                            <span className="achievementIcon">{badge.icon}</span>
+                            <div><strong>{copy[0]}</strong><small>{copy[1]}</small></div>
+                            <i>{lang === 'el' ? 'ΞΕΚΛΕΙΔΩΘΗΚΕ' : 'UNLOCKED'}</i>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="matchHistoryEmpty">{lang === 'el' ? 'Δεν έχουν ξεκλειδωθεί achievements ακόμα.' : 'No achievements unlocked yet.'}</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -4907,6 +5101,32 @@ export default function PalermoClient() {
                   <div><b>{profile.losses || 0}</b><span>{lang === 'el' ? 'ΗΤΤΕΣ' : 'LOSSES'}</span></div>
                   <div><b>{profile.mvps || 0}</b><span>MVP</span></div>
                   <div><b>{profile.games_played > 0 ? Math.round(((profile.wins || 0) / profile.games_played) * 100) : 0}%</b><span>{lang === 'el' ? 'ΠΟΣΟΣΤΟ ΝΙΚΗΣ' : 'WIN RATE'}</span></div>
+                </div>
+
+                <div className="achievementBlock">
+                  <div className="achievementHead">
+                    <div>
+                      <small>{lang === 'el' ? 'ΣΥΛΛΟΓΗ ΠΡΟΦΙΛ' : 'PROFILE COLLECTION'}</small>
+                      <strong>{lang === 'el' ? 'ACHIEVEMENTS & BADGES' : 'ACHIEVEMENTS & BADGES'}</strong>
+                    </div>
+                    <b>{(profile.achievements || []).length}/{ACHIEVEMENTS.length}</b>
+                  </div>
+                  <div className="achievementGrid">
+                    {ACHIEVEMENTS.map(badge => {
+                      const unlocked = (profile.achievements || []).includes(badge.id)
+                      const copy = lang === 'el' ? badge.el : badge.en
+                      return (
+                        <div className={`achievementBadge ${badge.tier} ${unlocked ? 'unlocked' : 'locked'}`} key={badge.id}>
+                          <span className="achievementIcon">{unlocked ? badge.icon : '◆'}</span>
+                          <div>
+                            <strong>{copy[0]}</strong>
+                            <small>{copy[1]}</small>
+                          </div>
+                          <i>{unlocked ? (lang === 'el' ? 'ΞΕΚΛΕΙΔΩΘΗΚΕ' : 'UNLOCKED') : (lang === 'el' ? 'ΚΛΕΙΔΩΜΕΝΟ' : 'LOCKED')}</i>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 <div className="matchHistoryBlock">
