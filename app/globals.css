@@ -2598,3 +2598,331 @@ html,body{background:var(--palermo-bg)}
 .leaderboardCreatorTag{display:inline-flex;align-items:center;padding:3px 5px;border:1px solid #725537;border-radius:999px;background:#1c150f;color:#d9b779;font:900 6px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.09em}
 .leaderboardBadgePreview .creatorPreview{border-color:#8d6b3e;color:#e1bc75;background:#21170f}
 @media(max-width:560px){.specialBadgeShowcase{padding:12px;gap:11px}.specialBadgeSeal{width:48px;height:48px;flex-basis:48px}}
+
+
+/* Creator admin panel */
+.adminButton{
+  padding:8px 11px!important;
+  border-color:#7a5b37!important;
+  background:linear-gradient(180deg,#2a1d10,#17110d)!important;
+  color:#e2c17e!important;
+  font-size:9px!important;
+  letter-spacing:.11em!important;
+}
+.adminButton:hover{
+  border-color:#a47c46!important;
+  background:linear-gradient(180deg,#382615,#20160f)!important;
+}
+.adminBackdrop{
+  position:fixed;
+  inset:0;
+  z-index:110;
+  display:grid;
+  place-items:center;
+  padding:18px;
+  background:rgba(3,3,4,.88);
+  backdrop-filter:blur(11px);
+}
+.adminModal{
+  width:min(1120px,100%);
+  max-height:92vh;
+  overflow:auto;
+  padding:24px;
+  border-color:#5c4934!important;
+  background:
+    radial-gradient(circle at 16% 0,rgba(195,155,91,.075),transparent 32%),
+    linear-gradient(180deg,#211c18,#0d0d0f)!important;
+  box-shadow:0 38px 130px rgba(0,0,0,.7)!important;
+}
+.adminHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:18px;
+  margin-bottom:18px;
+}
+.adminHead h2{
+  margin:4px 0 6px;
+  color:#f0e3d0;
+  font:900 clamp(30px,5vw,46px)/.95 Georgia,"Times New Roman",serif;
+}
+.adminHead p{
+  margin:0;
+  color:#94887b;
+  font-size:12px;
+  line-height:1.45;
+}
+.adminHeadActions{
+  display:flex;
+  gap:8px;
+}
+.adminTabs{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:18px;
+}
+.adminTabs button{
+  min-height:42px;
+  border-color:#40372f!important;
+  background:#121112!important;
+  color:#8c8176!important;
+  font-size:9px!important;
+  letter-spacing:.1em!important;
+}
+.adminTabs button.active{
+  border-color:#89683d!important;
+  background:linear-gradient(180deg,#2f2215,#18120d)!important;
+  color:#e3c486!important;
+  box-shadow:inset 0 -2px 0 #b18449;
+}
+.adminError{margin-bottom:14px}
+.adminLoading,.adminEmpty{
+  padding:28px 16px;
+  text-align:center;
+  border:1px dashed #4a3d30;
+  border-radius:5px;
+  color:#8f8275;
+  font:800 9px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.1em;
+}
+.adminOverview{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.adminMetric{
+  min-height:122px;
+  padding:15px;
+  display:grid;
+  align-content:center;
+  gap:5px;
+  text-align:center;
+  border:1px solid #44382c;
+  border-radius:5px;
+  background:
+    radial-gradient(circle at 50% 0,rgba(195,155,91,.075),transparent 48%),
+    #111011;
+}
+.adminMetric>span{font-size:20px;color:#b18b53}
+.adminMetric>b{
+  color:#eee0cb;
+  font:900 31px/1 Georgia,"Times New Roman",serif;
+}
+.adminMetric>small{
+  color:#7f7469;
+  font:800 8px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.12em;
+}
+.adminQuick{
+  grid-column:1/-1;
+  padding:18px;
+  border-color:#59442f!important;
+  background:linear-gradient(120deg,rgba(53,37,23,.96),rgba(15,14,14,.98))!important;
+}
+.adminQuick small{
+  color:#96764d;
+  font:800 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.14em;
+}
+.adminQuick strong{
+  display:block;
+  margin:4px 0;
+  color:#eddbbd;
+  font:800 21px/1.1 Georgia,"Times New Roman",serif;
+}
+.adminQuick p{margin:0;color:#948577;font-size:11px;line-height:1.5}
+.adminSection{display:grid;gap:12px}
+.adminToolbar{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.adminToolbar input{
+  flex:1;
+  min-width:0;
+  margin:0!important;
+}
+.adminToolbar>span{
+  flex:0 0 auto;
+  color:#917a5a;
+  font:800 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.12em;
+}
+.adminSectionTitle{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+}
+.adminSectionTitle>div{display:grid;gap:3px}
+.adminSectionTitle small{
+  color:#756a60;
+  font:800 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.13em;
+}
+.adminSectionTitle strong{
+  color:#e8dccb;
+  font:800 16px/1 Georgia,"Times New Roman",serif;
+}
+.adminSectionTitle>b{
+  min-width:42px;
+  padding:7px 9px;
+  text-align:center;
+  border:1px solid #54412d;
+  border-radius:4px;
+  background:#15110e;
+  color:#ca9f64;
+}
+.adminList,.adminBugList{
+  display:grid;
+  gap:8px;
+}
+.adminPlayerRow,.adminRoomRow{
+  display:grid;
+  align-items:center;
+  gap:11px;
+  padding:11px 12px;
+  border:1px solid #383129;
+  border-radius:5px;
+  background:rgba(13,13,14,.82);
+}
+.adminPlayerRow{
+  grid-template-columns:42px minmax(0,1fr) auto;
+}
+.adminAvatar{
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  overflow:hidden;
+  display:grid;
+  place-items:center;
+  border:1px solid #55432f;
+  background:#18130f;
+  color:#dab975;
+  font-weight:900;
+}
+.adminAvatar img{width:100%;height:100%;object-fit:cover}
+.adminPlayerMain{min-width:0;display:grid;gap:4px}
+.adminPlayerName{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.adminPlayerName strong{
+  color:#e9dfd1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.adminPlayerName span{
+  padding:3px 5px;
+  border:1px solid #735536;
+  border-radius:999px;
+  color:#dcb873;
+  background:#1c140e;
+  font:900 6px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.08em;
+}
+.adminPlayerMain small{
+  color:#786f66;
+  font:700 8px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.06em;
+}
+.adminPlayerRow button{
+  padding:7px 10px!important;
+  font-size:8px!important;
+}
+.adminRoomRow{
+  grid-template-columns:minmax(0,1fr) auto auto;
+}
+.adminRoomRow>div:first-child{min-width:0;display:grid;gap:4px}
+.adminRoomRow strong{
+  color:#e6dac9;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.adminRoomRow small{
+  color:#756b61;
+  font:700 8px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.05em;
+}
+.adminRoomNumbers{
+  display:flex;
+  gap:6px;
+}
+.adminRoomNumbers span{
+  padding:5px 7px;
+  border:1px solid #3d342c;
+  border-radius:3px;
+  background:#111;
+  color:#a99579;
+  font:800 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.adminBugCard{
+  display:grid;
+  gap:10px;
+  padding:14px;
+  border:1px solid #43352c;
+  border-radius:5px;
+  background:linear-gradient(180deg,#171412,#0d0d0e);
+}
+.adminBugTop{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.adminBugTop>span{
+  color:#d59e6d;
+  font:900 8px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.13em;
+}
+.adminBugTop>small{color:#70675f;font-size:8px}
+.adminBugCard p{
+  margin:0;
+  color:#c5b8a8;
+  font-size:12px;
+  line-height:1.5;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.adminBugMeta{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.adminBugMeta span{
+  padding:4px 6px;
+  border:1px solid #3b332c;
+  border-radius:3px;
+  color:#81766b;
+  font:800 7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.08em;
+}
+.adminBugCard>.danger{
+  width:max-content;
+  justify-self:end;
+  padding:7px 10px!important;
+  font-size:8px!important;
+}
+@media(max-width:760px){
+  .adminBackdrop{padding:8px}
+  .adminModal{padding:16px;max-height:96vh}
+  .adminTabs{grid-template-columns:1fr 1fr}
+  .adminOverview{grid-template-columns:1fr 1fr}
+  .adminRoomRow{grid-template-columns:1fr auto}
+  .adminRoomNumbers{grid-column:1/2}
+  .adminRoomRow>.danger{grid-column:2;grid-row:1/3}
+}
+@media(max-width:520px){
+  .adminHead{align-items:flex-start}
+  .adminHead p{font-size:10px}
+  .adminOverview{grid-template-columns:1fr 1fr}
+  .adminMetric{min-height:100px;padding:11px}
+  .adminPlayerRow{grid-template-columns:36px minmax(0,1fr)}
+  .adminAvatar{width:34px;height:34px}
+  .adminPlayerRow>button{grid-column:2;width:100%}
+  .adminRoomRow{grid-template-columns:1fr}
+  .adminRoomNumbers,.adminRoomRow>.danger{grid-column:1;grid-row:auto}
+  .adminRoomRow>.danger{width:100%}
+  .adminToolbar{align-items:stretch;flex-direction:column}
+  .adminToolbar>span{align-self:flex-end}
+}
