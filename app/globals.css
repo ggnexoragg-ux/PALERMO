@@ -3371,3 +3371,161 @@ html,body{background:var(--palermo-bg)}
   .adminOverview{grid-template-columns:1fr!important}
   .profileStats{grid-template-columns:1fr 1fr!important}
 }
+
+
+/* Mobile refinement v2 — less cramped, better iPhone proportions */
+@media(max-width:640px){
+  html{-webkit-text-size-adjust:100%}
+
+  .palermoShell{
+    padding-left:16px!important;
+    padding-right:16px!important;
+  }
+
+  /* Keep the language screen header compact instead of a full-width status bar */
+  .palermoShell[data-screen="language"] .palermoTop{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    align-items:center!important;
+    gap:10px!important;
+  }
+  .palermoShell[data-screen="language"] .palermoTop>div:last-child{
+    width:auto!important;
+    overflow:visible!important;
+    padding:0!important;
+  }
+  .palermoShell[data-screen="language"] .palermoBadge{
+    width:auto!important;
+    min-height:34px!important;
+    padding:7px 10px!important;
+    justify-content:center;
+  }
+
+  /* Give the hero more breathing room without letting the title dominate the screen */
+  .palermoHero{
+    padding-top:10px!important;
+  }
+  .palermoHero h1{
+    font-size:clamp(46px,13.5vw,56px)!important;
+    line-height:.9!important;
+    letter-spacing:-.035em!important;
+  }
+  .palermoHero>p{
+    max-width:36ch!important;
+    margin-top:16px!important;
+  }
+  .caseKicker{
+    gap:8px!important;
+    row-gap:6px!important;
+    line-height:1.3!important;
+  }
+  .caseKicker span,.caseKicker i{
+    font-size:8px!important;
+    letter-spacing:.14em!important;
+  }
+  .noirTagline{
+    padding:10px 12px!important;
+    margin-top:16px!important;
+  }
+
+  /* Home room setup: stop turning every option into a huge vertical stack */
+  .palermoEntry{
+    padding:18px!important;
+  }
+  .palermoEntry .modeSwitch{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:7px!important;
+  }
+  .palermoEntry .modeSwitch button{
+    min-width:0!important;
+    padding:11px 6px!important;
+    font-size:8px!important;
+    letter-spacing:.06em!important;
+    white-space:normal!important;
+    line-height:1.2!important;
+  }
+  .palermoEntry .palermoActions{
+    grid-template-columns:1fr 1fr!important;
+    gap:8px!important;
+  }
+  .palermoEntry .palermoActions .browseRoomsButton{
+    grid-column:1/-1;
+  }
+
+  /* Language card feels like a deliberate mobile screen, not a stretched desktop panel */
+  .palermoShell[data-screen="language"] .palermoPanelWrap{
+    width:min(100%,520px)!important;
+    margin:0 auto!important;
+    padding-top:26px!important;
+  }
+  .palermoShell[data-screen="language"] .joinCard{
+    padding:22px 18px!important;
+  }
+  .palermoShell[data-screen="language"] .joinCard h2{
+    font-size:36px!important;
+    line-height:.98!important;
+    max-width:11ch;
+  }
+  .palermoShell[data-screen="language"] .modeSwitch{
+    grid-template-columns:1fr 1fr!important;
+    gap:10px!important;
+  }
+  .palermoShell[data-screen="language"] .modeSwitch button{
+    min-height:50px!important;
+  }
+
+  /* Inputs: a little less oversized while remaining touch-friendly */
+  .palermoEntry input,.joinCard input{
+    padding:13px 14px!important;
+  }
+  .palermoEntry label,.settingsRow label{
+    letter-spacing:.13em!important;
+  }
+
+  /* Cards and lobby/game sections get horizontal room instead of hugging the edges */
+  .lobbyGrid,.gameGrid,.roomBrowserGrid{
+    width:100%!important;
+  }
+  .playersCard,.settingsCard,.phaseCard,.interrogationPanel,.playerBoard,
+  .miniRole,.voiceBox,.killerBox,.spectatorChat{
+    border-radius:5px!important;
+  }
+
+  /* Do not let floating branding cover buttons/forms on mobile */
+  .palermoCredit{
+    position:static!important;
+    width:max-content!important;
+    max-width:100%!important;
+    margin:18px 0 0 auto!important;
+    white-space:nowrap!important;
+  }
+
+  /* Slightly calmer typography/spacing in dense controls */
+  .palermoShell button{
+    letter-spacing:.055em!important;
+  }
+  .cardTitle{
+    letter-spacing:.11em!important;
+  }
+}
+
+@media(max-width:380px){
+  .palermoShell{
+    padding-left:12px!important;
+    padding-right:12px!important;
+  }
+  .palermoEntry .modeSwitch{
+    grid-template-columns:1fr!important;
+  }
+  .palermoEntry .palermoActions{
+    grid-template-columns:1fr!important;
+  }
+  .palermoEntry .palermoActions .browseRoomsButton{
+    grid-column:auto;
+  }
+  .palermoShell[data-screen="language"] .palermoTop{
+    grid-template-columns:1fr!important;
+  }
+  .palermoShell[data-screen="language"] .modeSwitch{
+    grid-template-columns:1fr!important;
+  }
+}
