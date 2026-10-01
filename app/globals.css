@@ -1961,3 +1961,25 @@ html,body{background:var(--palermo-bg)}
   .daySkipPanel{padding:10px}
   .daySkipInfo{align-items:flex-start}
 }
+
+/* Palermo header logo */
+.brandLogoImage{
+  width:48px;
+  height:48px;
+  flex:0 0 48px;
+  display:block;
+  object-fit:cover;
+  border-radius:50%;
+  border:1px solid #76562f;
+  background:#0a0909;
+  box-shadow:
+    0 0 0 3px rgba(195,155,91,.035),
+    0 8px 24px rgba(0,0,0,.36);
+}
+@media(max-width:560px){
+  .brandLogoImage{
+    width:42px;
+    height:42px;
+    flex-basis:42px;
+  }
+}
