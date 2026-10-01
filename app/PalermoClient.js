@@ -88,6 +88,15 @@ const TEXT = {
     displayName: 'DISPLAY NAME',
     createRoom: 'CREATE ROOM',
     joinRoom: 'JOIN ROOM',
+    browseRooms: 'BROWSE ROOMS',
+    roomBrowser: 'ROOM BROWSER',
+    roomBrowserHint: 'Find active Palermo rooms and choose where to sit down.',
+    waitingRoom: 'WAITING',
+    inProgressRoom: 'IN MATCH',
+    roomFull: 'FULL',
+    selectRoom: 'SELECT ROOM',
+    watchRoom: 'SPECTATE',
+    joinByCode: 'JOIN BY CODE',
     noAccount: 'ACCOUNTS + GUESTS',
     realPlayers: 'REAL PLAYERS',
     roomCodes: 'ROOM CODES',
@@ -261,6 +270,15 @@ const TEXT = {
     displayName: 'ΟΝΟΜΑ ΠΑΙΚΤΗ',
     createRoom: 'ΔΗΜΙΟΥΡΓΙΑ ΔΩΜΑΤΙΟΥ',
     joinRoom: 'ΣΥΜΜΕΤΟΧΗ ΣΕ ΔΩΜΑΤΙΟ',
+    browseRooms: 'ΠΕΡΙΗΓΗΣΗ ΔΩΜΑΤΙΩΝ',
+    roomBrowser: 'ΛΙΣΤΑ ΔΩΜΑΤΙΩΝ',
+    roomBrowserHint: 'Βρες ενεργά δωμάτια Palermo και διάλεξε πού θέλεις να μπεις.',
+    waitingRoom: 'ΠΕΡΙΜΕΝΕΙ',
+    inProgressRoom: 'ΣΕ ΠΑΙΧΝΙΔΙ',
+    roomFull: 'ΓΕΜΑΤΟ',
+    selectRoom: 'ΕΠΙΛΟΓΗ',
+    watchRoom: 'ΘΕΑΤΗΣ',
+    joinByCode: 'ΕΙΣΟΔΟΣ ΜΕ ΚΩΔΙΚΟ',
     noAccount: 'ΛΟΓΑΡΙΑΣΜΟΙ + ΕΠΙΣΚΕΠΤΕΣ',
     realPlayers: 'ΠΡΑΓΜΑΤΙΚΟΙ ΠΑΙΚΤΕΣ',
     roomCodes: 'ΚΩΔΙΚΟΙ ΔΩΜΑΤΙΩΝ',
@@ -1527,14 +1545,14 @@ export default function PalermoClient() {
   }, [isHost, screen, connectionState])
 
   useEffect(() => {
-    const musicScreens = ['home', 'join', 'lobby', 'gameOver']
+    const musicScreens = ['home', 'browse', 'join', 'lobby', 'gameOver']
     if (musicScreens.includes(screen) && menuMusicOn) startMenuMusic()
     if (!musicScreens.includes(screen)) stopMenuMusic()
   }, [screen, menuMusicOn])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
-    const soundScreens = ['language', 'home', 'join', 'lobby', 'gameOver']
+    const soundScreens = ['language', 'home', 'browse', 'join', 'lobby', 'gameOver']
     if (!soundScreens.includes(screen)) return
 
     const root = document.querySelector('.palermoShell')
@@ -1629,7 +1647,7 @@ export default function PalermoClient() {
   }, [screen, phase, round, lang, narratorOn])
 
   useEffect(() => {
-    if (screen !== 'join') return
+    if (!['join','browse'].includes(screen)) return
     let cancelled = false
     const load = async () => {
       setRoomsLoading(true)
@@ -3092,6 +3110,17 @@ export default function PalermoClient() {
     connectOnce()
   }
 
+  async function refreshPublicRooms() {
+    setRoomsLoading(true)
+    try {
+      setPublicRooms(await fetchPublicRooms())
+    } catch {
+      setPublicRooms([])
+    } finally {
+      setRoomsLoading(false)
+    }
+  }
+
   function joinRoom() {
     const cleanName = normalizePlayerName(name)
     if (!cleanName || !joinCode.trim()) return
@@ -3999,6 +4028,12 @@ export default function PalermoClient() {
   const roleConfigValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
   const allReady = players.length >= 2 && players.every(p => p.connected !== false && p.ready) && roleConfigValid
   const observerMode = isDead || joinMode === 'spectator'
+  const browsableRooms = publicRooms
+    .filter(room => {
+      const heartbeat = Date.parse(room.heartbeat_at || '')
+      return Number.isFinite(heartbeat) ? Date.now() - heartbeat < 70000 : true
+    })
+    .sort((a, b) => Number(a.started) - Number(b.started) || Number(b.player_count || 0) - Number(a.player_count || 0))
 
   return (
     <main className="palermoShell" data-screen={screen}>
@@ -4084,7 +4119,8 @@ export default function PalermoClient() {
             {accessMode === 'code' && <input value={accessCode} onChange={e => setAccessCode(e.target.value)} maxLength={20} placeholder={t('roomPassword')} />}
             <div className="palermoActions">
               <button className="primary" onClick={createRoom} disabled={!name.trim() || connectionState === 'connecting'}>{t('createRoom')}</button>
-              <button onClick={() => setScreen('join')} disabled={!name.trim()}>{t('joinRoom')}</button>
+              <button onClick={() => { setScreen('join'); screenRef.current = 'join' }} disabled={!name.trim()}>{t('joinRoom')}</button>
+              <button className="browseRoomsButton" onClick={() => { setScreen('browse'); screenRef.current = 'browse' }} disabled={!name.trim()}>◉ {t('browseRooms')}</button>
             </div>
             {connectionError && <small className="errorText">{connectionError}</small>}
           </div>
@@ -4096,6 +4132,87 @@ export default function PalermoClient() {
         </section>
       )}
 
+      {screen === 'browse' && (
+        <section className="palermoPanelWrap roomBrowserWrap">
+          <button className="backBtn" onClick={() => { setScreen('home'); screenRef.current = 'home' }}>← {t('back')}</button>
+
+          <div className="roomBrowserHero card">
+            <div>
+              <div className="palermoEyebrow">PALERMO // PUBLIC TABLES</div>
+              <h2>{t('roomBrowser')}</h2>
+              <p>{t('roomBrowserHint')}</p>
+            </div>
+            <div className="roomBrowserHeroActions">
+              <span className="roomBrowserCount">{browsableRooms.length} {lang === 'el' ? 'ΕΝΕΡΓΑ' : 'ACTIVE'}</span>
+              <button onClick={refreshPublicRooms} disabled={roomsLoading}>{roomsLoading ? t('connecting') : '↻ ' + t('refreshRooms')}</button>
+            </div>
+          </div>
+
+          <div className="roomBrowserGrid">
+            {browsableRooms.map(room => {
+              const playersFull = Number(room.player_count || 0) >= Number(room.max_players || 0)
+              const spectatorOpen = Number(room.spectator_count || 0) < Number(room.max_spectators || 0)
+              const playerJoinable = !room.started && !playersFull
+              const useSpectator = !playerJoinable && spectatorOpen
+              const unavailable = !playerJoinable && !spectatorOpen
+              const status = room.started ? t('inProgressRoom') : playersFull ? t('roomFull') : t('waitingRoom')
+              const accessLabel = room.access_mode === 'open' ? t('openRoom') : room.access_mode === 'request' ? t('approvalRoom') : t('passwordRoom')
+
+              return (
+                <article className={'roomBrowserCard card ' + (room.started ? 'isStarted ' : '') + (unavailable ? 'isUnavailable' : '')} key={room.room_code}>
+                  <div className="roomBrowserCardTop">
+                    <span className={'roomStatusBadge ' + (room.started ? 'started' : playersFull ? 'full' : 'waiting')}>{status}</span>
+                    <span className="roomLanguageBadge">{room.language === 'el' ? 'ΕΛ' : 'EN'}</span>
+                  </div>
+
+                  <div className="roomBrowserIdentity">
+                    <h3>{room.room_name || ((room.host_name || 'Palermo') + "'s Room")}</h3>
+                    <small>HOST // {room.host_name || 'Unknown'}</small>
+                  </div>
+
+                  <div className="roomBrowserStats">
+                    <div><b>{room.player_count}/{room.max_players}</b><span>{t('players')}</span></div>
+                    <div><b>{room.spectator_count}/{room.max_spectators}</b><span>{t('spectators')}</span></div>
+                    <div><b>{accessLabel}</b><span>{t('access')}</span></div>
+                  </div>
+
+                  <div className="roomBrowserFooter">
+                    <span className="roomCodeMini">{room.room_code}</span>
+                    <button
+                      className={playerJoinable ? 'primary' : ''}
+                      disabled={unavailable}
+                      onClick={() => {
+                        setJoinCode(room.room_code)
+                        setJoinAccessCode('')
+                        setJoinMode(useSpectator ? 'spectator' : 'player')
+                        setScreen('join')
+                        screenRef.current = 'join'
+                      }}
+                    >
+                      {unavailable ? t('roomFull') : useSpectator ? '👁 ' + t('watchRoom') : '→ ' + t('selectRoom')}
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+
+            {!roomsLoading && browsableRooms.length === 0 && (
+              <div className="roomBrowserEmpty card">
+                <span>☾</span>
+                <h3>{t('noPublicRooms')}</h3>
+                <p>{lang === 'el' ? 'Μπορείς να δημιουργήσεις το δικό σου δωμάτιο ή να δοκιμάσεις ξανά σε λίγο.' : 'Create your own room, or check again in a moment.'}</p>
+                <button onClick={refreshPublicRooms}>↻ {t('refreshRooms')}</button>
+              </div>
+            )}
+          </div>
+
+          <div className="roomBrowserManual">
+            <span>{lang === 'el' ? 'Έχεις ήδη κωδικό δωματίου;' : 'Already have a room code?'}</span>
+            <button onClick={() => { setScreen('join'); screenRef.current = 'join' }}>{t('joinByCode')} →</button>
+          </div>
+        </section>
+      )}
+
       {screen === 'join' && (
         <section className="palermoPanelWrap">
           <button className="backBtn" onClick={() => setScreen('home')}>← {t('back')}</button>
@@ -4103,9 +4220,9 @@ export default function PalermoClient() {
             <div className="caseFileTab mafiaFileTab">{lang === 'el' ? 'ΙΔΙΩΤΙΚΟ ΔΩΜΑΤΙΟ' : 'PRIVATE ROOM'}</div>
             <div className="palermoEyebrow">{t('joinPrivate')}</div>
             <h2>{t('enterCode')}</h2>
-            <div className="cardTitle" style={{marginBottom:10}}><span>{t('publicRooms')}</span><button onClick={async () => { setRoomsLoading(true); try { setPublicRooms(await fetchPublicRooms()) } finally { setRoomsLoading(false) } }}>{t('refreshRooms')}</button></div>
+            <div className="cardTitle" style={{marginBottom:10}}><span>{t('publicRooms')}</span><button onClick={refreshPublicRooms} disabled={roomsLoading}>{roomsLoading ? t('connecting') : t('refreshRooms')}</button></div>
             <div style={{display:'grid',gap:8,maxHeight:260,overflowY:'auto',marginBottom:16}}>
-              {publicRooms.map(room => (
+              {browsableRooms.map(room => (
                 <button key={room.room_code} onClick={() => { setJoinCode(room.room_code); setJoinAccessCode('') }} style={{textAlign:'left',padding:12}}>
                   <strong>{room.room_name}</strong>
                   <small style={{display:'block',opacity:.75,marginTop:4}}>
@@ -4113,7 +4230,7 @@ export default function PalermoClient() {
                   </small>
                 </button>
               ))}
-              {!roomsLoading && publicRooms.length === 0 && <small>{t('noPublicRooms')}</small>}
+              {!roomsLoading && browsableRooms.length === 0 && <small>{t('noPublicRooms')}</small>}
               {roomsLoading && <small>{t('connecting')}</small>}
             </div>
             <input className="codeInput" value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="X7K9Q" />
