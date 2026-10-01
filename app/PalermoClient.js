@@ -69,6 +69,22 @@ const ACHIEVEMENTS = [
 
 const achievementById = id => ACHIEVEMENTS.find(item => item.id === id)
 
+const CREATOR_PROFILE_IDS = new Set([
+  '5622913d-1360-4601-922e-fad940c18418',
+])
+
+const SPECIAL_BADGES = {
+  creator: {
+    id: 'creator',
+    icon: '♛',
+    tier: 'creator',
+    en: ['Creator', 'Original creator of Palermo.'],
+    el: ['Creator', 'Αρχικός δημιουργός του Palermo.'],
+  },
+}
+
+const isCreatorProfile = row => !!row?.id && CREATOR_PROFILE_IDS.has(String(row.id))
+
 const SUPABASE_URL = 'https://xwckthedqrgbnfvwccyr.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3Y2t0aGVkcXJnYm5mdndjY3lyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3Nzk3NDgsImV4cCI6MjEwNjM1NTc0OH0.kRANBc_vOD6epHHqWrGkJamgxN9enlY_siBnzmpakNM'
 const REGISTRY_HEADERS = {
@@ -4976,9 +4992,13 @@ export default function PalermoClient() {
                     <div className="leaderboardPlayer">
                       <span className="leaderboardAvatar">{row.avatar_url ? <img src={row.avatar_url} alt="" /> : row.username?.[0]?.toUpperCase()}</span>
                       <div className="leaderboardPlayerCopy">
-                        <strong>{row.username}{profile?.id === row.id ? (lang === 'el' ? ' (ΕΣΥ)' : ' (YOU)') : ''}</strong>
+                        <div className="leaderboardNameLine">
+                          <strong>{row.username}{profile?.id === row.id ? (lang === 'el' ? ' (ΕΣΥ)' : ' (YOU)') : ''}</strong>
+                          {isCreatorProfile(row) && <span className="leaderboardCreatorTag">♛ CREATOR</span>}
+                        </div>
                         <span className="leaderboardBadgePreview">
-                          {(row.achievements || []).slice(-3).map(id => {
+                          {isCreatorProfile(row) && <i className="creatorPreview" title="Creator">♛</i>}
+                          {(row.achievements || []).slice(-(isCreatorProfile(row) ? 2 : 3)).map(id => {
                             const badge = achievementById(id)
                             return badge ? <i key={id} title={(lang === 'el' ? badge.el : badge.en)[0]}>{badge.icon}</i> : null
                           })}
@@ -5022,7 +5042,10 @@ export default function PalermoClient() {
                     {publicProfile.avatar_url ? <img src={publicProfile.avatar_url} alt="" /> : <span>{publicProfile.username?.[0]?.toUpperCase() || 'P'}</span>}
                   </div>
                   <div>
-                    <strong>{publicProfile.username}</strong>
+                    <div className="profileNameLine">
+                      <strong>{publicProfile.username}</strong>
+                      {isCreatorProfile(publicProfile) && <span className="specialProfileTag creator">♛ {lang === 'el' ? 'ΔΗΜΙΟΥΡΓΟΣ' : 'CREATOR'}</span>}
+                    </div>
                     <small>{lang === 'el' ? 'ΠΑΙΚΤΗΣ PALERMO' : 'PALERMO PLAYER'}</small>
                     <span>{(publicProfile.achievements || []).length} {lang === 'el' ? 'BADGES ΞΕΚΛΕΙΔΩΜΕΝΑ' : 'BADGES UNLOCKED'}</span>
                   </div>
@@ -5035,6 +5058,17 @@ export default function PalermoClient() {
                   <div><b>{publicProfile.mvps || 0}</b><span>MVP</span></div>
                   <div><b>{publicProfile.games_played > 0 ? Math.round(((publicProfile.wins || 0) / publicProfile.games_played) * 100) : 0}%</b><span>{lang === 'el' ? 'ΠΟΣΟΣΤΟ ΝΙΚΗΣ' : 'WIN RATE'}</span></div>
                 </div>
+
+                {isCreatorProfile(publicProfile) && (
+                  <div className="specialBadgeShowcase creator">
+                    <span className="specialBadgeSeal">♛</span>
+                    <div>
+                      <small>PALERMO // SPECIAL BADGE</small>
+                      <strong>CREATOR</strong>
+                      <p>{lang === 'el' ? 'Αρχικός δημιουργός του Palermo.' : 'Original creator of Palermo.'}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="achievementBlock publicAchievements">
                   <div className="achievementHead">
@@ -5088,7 +5122,10 @@ export default function PalermoClient() {
                     <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e => uploadAvatar(e.target.files?.[0])} />
                   </label>
                   <div>
-                    <strong>{profile.username}</strong>
+                    <div className="profileNameLine">
+                      <strong>{profile.username}</strong>
+                      {isCreatorProfile(profile) && <span className="specialProfileTag creator">♛ {lang === 'el' ? 'ΔΗΜΙΟΥΡΓΟΣ' : 'CREATOR'}</span>}
+                    </div>
                     <small>{authSession?.user?.email}</small>
                     <span>{avatarUploading ? (lang === 'el' ? 'ΑΝΕΒΑΖΕΙ...' : 'UPLOADING...') : (lang === 'el' ? 'ΠΑΤΑ ΤΗΝ ΕΙΚΟΝΑ ΓΙΑ ΑΛΛΑΓΗ' : 'CLICK IMAGE TO CHANGE')}</span>
                   </div>
@@ -5102,6 +5139,17 @@ export default function PalermoClient() {
                   <div><b>{profile.mvps || 0}</b><span>MVP</span></div>
                   <div><b>{profile.games_played > 0 ? Math.round(((profile.wins || 0) / profile.games_played) * 100) : 0}%</b><span>{lang === 'el' ? 'ΠΟΣΟΣΤΟ ΝΙΚΗΣ' : 'WIN RATE'}</span></div>
                 </div>
+
+                {isCreatorProfile(profile) && (
+                  <div className="specialBadgeShowcase creator">
+                    <span className="specialBadgeSeal">♛</span>
+                    <div>
+                      <small>PALERMO // SPECIAL BADGE</small>
+                      <strong>{lang === 'el' ? 'CREATOR' : 'CREATOR'}</strong>
+                      <p>{lang === 'el' ? 'Αρχικός δημιουργός του Palermo.' : 'Original creator of Palermo.'}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="achievementBlock">
                   <div className="achievementHead">
