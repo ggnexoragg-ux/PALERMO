@@ -37,7 +37,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "artifactName": "Palermo-Setup.exe"
     },
     "nsis": {
       "oneClick": false,
