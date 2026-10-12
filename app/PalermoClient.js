@@ -658,6 +658,7 @@ export default function PalermoClient() {
   const peerRef = useRef(null)
   const botLobbyRef = useRef(false)
   const botPhaseScheduledRef = useRef('')
+  const botChatReplyRef = useRef('')
   const hostConnRef = useRef(null)
   const guestConnsRef = useRef(new Map())
   const pendingJoinConnsRef = useRef(new Map())
@@ -1728,6 +1729,16 @@ export default function PalermoClient() {
     const bots = living.filter(p => p.isBot)
     if (!bots.length) return
 
+    if (phase === 'day') {
+      // Bots must participate in the unanimous skip command too; otherwise a lobby
+      // containing bots can never skip discussion because bots cannot click the UI.
+      bots.forEach(bot => schedule(() => {
+        if (phaseRef.current !== 'day' || !isHostRef.current) return
+        if (!gameRosterRef.current.some(p => p.id === bot.id && p.alive && p.connected !== false)) return
+        registerDaySkipVote(bot.id)
+      }, 1400, 3600))
+    }
+
     if (phase === 'night') {
       const livingKillers = living.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
       const botKillers = livingKillers.filter(p => p.isBot)
@@ -1773,6 +1784,35 @@ export default function PalermoClient() {
     }, 2600, 7600))
     return () => timers.forEach(timer => clearTimeout(timer))
   }, [isHost, screen, phase, round, phaseEndsAt, gameRoster.length])
+
+  // Give owner-lobby bots simple, delayed discussion replies to real players.
+  // Replies are only triggered by a human message, so bots never create a reply loop.
+  useEffect(() => {
+    if (!isHost || !botLobbyRef.current || screen !== 'game' || phase !== 'day' || !dayMessages.length) return
+    const latest = dayMessages[dayMessages.length - 1]
+    if (!latest || gameRosterRef.current.some(p => p.name === latest.name && p.isBot)) return
+    const livingBots = gameRosterRef.current.filter(p => p.isBot && p.alive && p.connected !== false)
+    if (!livingBots.length) return
+    const responseKey = `${round}:${latest.id}`
+    if (botChatReplyRef.current === responseKey) return
+    botChatReplyRef.current = responseKey
+    const replies = [
+      'Something about that story does not add up.',
+      'I want to hear what everyone else thinks first.',
+      'That is interesting, but it is not proof.',
+      'We should keep an eye on who changes their story.',
+      'I am not convinced yet. Let us compare what we know.',
+      'Could be true, could be a distraction. Be careful.',
+    ]
+    const timer = setTimeout(() => {
+      if (phaseRef.current !== 'day' || !isHostRef.current) return
+      const botsNow = gameRosterRef.current.filter(p => p.isBot && p.alive && p.connected !== false)
+      if (!botsNow.length) return
+      const bot = botsNow[Math.floor(Math.random() * botsNow.length)]
+      sendDayMessage(replies[Math.floor(Math.random() * replies.length)], bot.id)
+    }, 1800 + Math.floor(Math.random() * 2600))
+    return () => clearTimeout(timer)
+  }, [isHost, screen, phase, round, dayMessages])
 
   useEffect(() => {
     if (isHost && screen === 'game' && gameRoster.length > 0 && !matchFinishedRef.current) {
