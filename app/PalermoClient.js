@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_ROLES = [
   { id: 'visibleKiller', label: 'Revealed Killer', emoji: '🔪', count: 1, min: 1 },
-  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 0, min: 0 },
+  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 0 },
   { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
-  { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
+  { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 0, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
   { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
   { id: 'madness', label: 'Madness', emoji: '🌀', count: 0, min: 0 },
@@ -3766,12 +3766,21 @@ export default function PalermoClient() {
     }
     const alive = aliveRoster(roster)
     const killers = alive.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
-    const nonKillers = alive.filter(p => p.roleId !== 'visibleKiller' && p.roleId !== 'hiddenKiller')
+    const nonKillers = alive.filter(p => !['visibleKiller', 'hiddenKiller', 'kamikaze', 'madness'].includes(p.roleId))
+    const evil = alive.filter(p => ['visibleKiller', 'hiddenKiller', 'kamikaze'].includes(p.roleId))
     if (killers.length === 0) {
       finishMatch('citizens', roster, scores)
       return true
     }
-    if (killers.length > 0 && nonKillers.length <= 1) {
+    // Official Palermo rule: if only one killer remains against the police
+    // (represented by Detective here) or Soldier, the good team wins.
+    if (alive.length === 2 && killers.length === 1 && nonKillers.length === 1 &&
+        ['detective', 'soldier'].includes(nonKillers[0]?.roleId)) {
+      finishMatch('citizens', roster, scores)
+      return true
+    }
+    // The killers win when they outnumber the remaining good players.
+    if (evil.length > nonKillers.length) {
       finishMatch('killers', roster, scores)
       return true
     }
@@ -3807,7 +3816,7 @@ export default function PalermoClient() {
     if (!actor?.alive || actor.roleId !== 'kamikaze' || !target) return
     if (kamikazeUsedRef.current.has(actorId)) return
     if (target.id === actorId) return
-    if (target.roleId === 'visibleKiller' || target.roleId === 'hiddenKiller') return
+    if (!['citizen', 'detective', 'doctor', 'lover'].includes(target.roleId)) return
 
     kamikazeUsedRef.current.add(actorId)
     if (actorId === peerRef.current?.id) setKamikazeUsed(true)
@@ -3889,6 +3898,7 @@ export default function PalermoClient() {
     const topCount = ranked[0]?.[1] || 0
     const tied = ranked.filter(([, count]) => count === topCount).map(([target]) => target)
     const eliminatedName = tied.length === 1 ? tied[0] : ''
+    const isTie = topCount > 0 && tied.length > 1
 
     const nextScores = { ...voteScores }
     Object.entries(votesMap).forEach(([voterId, target]) => {
@@ -3925,8 +3935,8 @@ export default function PalermoClient() {
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
     } else {
-      showResultBanner('skip', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION', lang === 'el' ? 'Η ψηφοφορία δεν έβγαλε νικητή.' : 'The vote ended without a clear target.')
-      speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
+      showResultBanner('skip', isTie ? (lang === 'el' ? 'ΙΣΟΠΑΛΙΑ' : 'VOTE TIED') : (lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION'), isTie ? (lang === 'el' ? 'Συζητήστε ξανά και ψηφίστε πάλι.' : 'Discuss again, then vote again.') : (lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό.' : 'The vote ended without a clear target.'))
+      speak(isTie ? (lang === 'el' ? 'Υπάρχει ισοπαλία. Συζητήστε ξανά και ακολουθεί νέα ψηφοφορία.' : 'The vote is tied. Discuss again; another vote will follow.') : (lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.'), { interrupt: true, rate: 0.88, pitch: 0.92 })
       broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
 
@@ -3935,19 +3945,19 @@ export default function PalermoClient() {
     playerVotesRef.current = {}
     setVote('')
     setVoteLocked(false)
-    hostSchedulePhase('night', nextRound, 15)
+    // A tied vote must be discussed and retried; it must not silently skip to night.
+    if (isTie) hostSchedulePhase('day', roundRef.current, 120)
+    else hostSchedulePhase('night', nextRound, 15)
   }
 
   function resolveKillerVotes(currentKillerVotes = killerVotesRef.current, currentDoctorProtected = doctorProtectedRef.current) {
     if (!isHostRef.current || phaseRef.current !== 'night') return
     const values = Object.values(currentKillerVotes).filter(Boolean)
-    let target = ''
-    if (values.length === 1) target = values[0]
-    if (values.length >= 2) {
-      target = values.every(v => v === values[0])
-        ? values[0]
-        : values[Math.floor(Math.random() * values.length)]
-    }
+    const livingKillers = aliveRoster(gameRosterRef.current).filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
+    // Both living killers must agree on the same target; never choose randomly between them.
+    const target = livingKillers.length > 0 && values.length === livingKillers.length && values.every(v => v === values[0])
+      ? values[0]
+      : ''
 
     const saved = !!target && !!currentDoctorProtected && target === currentDoctorProtected
     const resolvedTarget = saved ? '' : target
