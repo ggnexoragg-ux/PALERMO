@@ -1,15 +1,52 @@
 {
   "name": "palermo-online",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "description": "Palermo desktop client for Windows",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "desktop:pack": "electron-builder --win nsis --x64"
   },
   "dependencies": {
     "next": "15.5.26",
     "react": "19.1.1",
     "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "gg.nexora.palermo",
+    "productName": "Palermo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Palermo-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Palermo"
+    }
   }
 }
