@@ -591,6 +591,7 @@ export default function PalermoClient() {
   const [joinPending, setJoinPending] = useState(false)
   const [bugOpen, setBugOpen] = useState(false)
   const [howToOpen, setHowToOpen] = useState(false)
+  const [updateLogOpen, setUpdateLogOpen] = useState(false)
   const [bugCategory, setBugCategory] = useState('gameplay')
   const [bugDescription, setBugDescription] = useState('')
   const [bugStatus, setBugStatus] = useState('idle')
@@ -4591,7 +4592,10 @@ export default function PalermoClient() {
           <div className="featureStrip">
             <span>{t('noAccount')}</span><span>{t('realPlayers')}</span><span>{t('roomCodes')}</span><span>{t('readySystem')}</span><span>{t('roleReveal')}</span>
           </div>
-          <button className="menuMusicToggle" onClick={toggleMenuMusic}>♫ {t('music')}: {menuMusicOn ? t('musicOn') : t('musicOff')}</button>
+          <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:14}}>
+            <button className="menuMusicToggle" onClick={toggleMenuMusic}>♫ {t('music')}: {menuMusicOn ? t('musicOn') : t('musicOff')}</button>
+            <button onClick={() => setUpdateLogOpen(true)} style={{border:'1px solid rgba(210,177,119,.55)',background:'rgba(18,16,14,.82)',color:'#e8d4ad',borderRadius:999,padding:'11px 17px',fontWeight:800,letterSpacing:'.08em',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.22)'}}>📜 {lang === 'el' ? 'ΤΙ ΝΕΟ ΥΠΑΡΧΕΙ' : "WHAT'S NEW"}</button>
+          </div>
         </section>
       )}
 
@@ -5841,6 +5845,46 @@ export default function PalermoClient() {
       <button className="bugReportFab" onClick={() => { setBugOpen(true); setBugStatus('idle') }}>
         🐞 {t('reportBug')}
       </button>
+
+      {updateLogOpen && (
+        <div onClick={() => setUpdateLogOpen(false)} style={{position:'fixed',inset:0,zIndex:10000,background:'rgba(5,5,7,.82)',backdropFilter:'blur(10px)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
+          <section role="dialog" aria-modal="true" aria-labelledby="update-log-title" onClick={e => e.stopPropagation()} style={{width:'min(680px,100%)',maxHeight:'85vh',overflowY:'auto',position:'relative',background:'linear-gradient(145deg,rgba(30,26,23,.98),rgba(12,13,16,.99))',border:'1px solid rgba(210,177,119,.4)',borderRadius:18,padding:'26px 24px',color:'#f4eee4',boxShadow:'0 24px 90px rgba(0,0,0,.6)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:16,marginBottom:22}}>
+              <div>
+                <div style={{fontSize:11,letterSpacing:'.22em',color:'#c9a66f',fontWeight:800}}>PALERMO // RELEASE NOTES</div>
+                <h2 id="update-log-title" style={{fontSize:'clamp(24px,5vw,34px)',margin:'8px 0 5px',fontFamily:'inherit'}}>{lang === 'el' ? 'Τι νέο υπάρχει' : "What's New"}</h2>
+                <p style={{margin:0,opacity:.72,fontSize:13}}>{lang === 'el' ? 'Οι αλλαγές και οι βελτιώσεις του Palermo.' : 'The latest changes and improvements to Palermo.'}</p>
+              </div>
+              <button aria-label={lang === 'el' ? 'Κλείσιμο' : 'Close'} onClick={() => setUpdateLogOpen(false)} style={{border:'1px solid rgba(255,255,255,.16)',background:'rgba(255,255,255,.06)',color:'inherit',borderRadius:10,width:38,height:38,fontSize:23,cursor:'pointer',flexShrink:0}}>×</button>
+            </div>
+            <article style={{borderLeft:'3px solid #c9a66f',padding:'4px 0 4px 17px',marginBottom:24}}>
+              <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:9,marginBottom:9}}>
+                <span style={{fontSize:11,fontWeight:900,letterSpacing:'.1em',padding:'5px 8px',borderRadius:5,background:'rgba(201,166,111,.16)',color:'#e5c58f'}}>{lang === 'el' ? 'ΤΕΛΕΥΤΑΙΑ ΕΝΗΜΕΡΩΣΗ' : 'LATEST UPDATE'}</span>
+                <span style={{fontSize:12,opacity:.65}}>v1.1 · 12 Oct 2026</span>
+              </div>
+              <h3 style={{fontSize:19,margin:'0 0 12px'}}>{lang === 'el' ? 'Πιο εύκολη πρόσβαση και δοκιμές' : 'Easier access and testing'}</h3>
+              <ul style={{margin:0,paddingLeft:20,lineHeight:1.8,opacity:.92}}>
+                <li>{lang === 'el' ? 'Προστέθηκε ανάκτηση κωδικού πρόσβασης.' : 'Added password recovery for accounts.'}</li>
+                <li>{lang === 'el' ? 'Προστέθηκε ιδιωτικό lobby δοκιμών με bots για τον δημιουργό.' : 'Added a private owner-only bot testing lobby.'}</li>
+                <li>{lang === 'el' ? 'Βελτιώθηκαν οι συζητήσεις των bots και η συμπεριφορά ψήφου στις δοκιμές.' : 'Improved bot discussions and voting behavior for testing.'}</li>
+              </ul>
+            </article>
+            <article style={{borderLeft:'3px solid rgba(201,166,111,.38)',padding:'4px 0 4px 17px',marginBottom:22}}>
+              <div style={{fontSize:11,fontWeight:900,letterSpacing:'.1em',opacity:.65,marginBottom:8}}>{lang === 'el' ? 'ΑΡΧΙΚΗ ΕΚΔΟΣΗ' : 'INITIAL RELEASE'} · v1.0</div>
+              <h3 style={{fontSize:19,margin:'0 0 12px'}}>{lang === 'el' ? 'Καλώς ήρθες στο Palermo' : 'Welcome to Palermo'}</h3>
+              <ul style={{margin:0,paddingLeft:20,lineHeight:1.8,opacity:.85}}>
+                <li>{lang === 'el' ? 'Δημιουργία δωματίων, προσκλήσεις και λίστα δημόσιων δωματίων.' : 'Room creation, invitations, and public room browsing.'}</li>
+                <li>{lang === 'el' ? 'Ρόλοι, νυχτερινές ενέργειες, συζήτηση και ψηφοφορία.' : 'Roles, night actions, discussion, and voting.'}</li>
+                <li>{lang === 'el' ? 'Υποστήριξη Αγγλικών και Ελληνικών.' : 'English and Greek language support.'}</li>
+              </ul>
+            </article>
+            <div style={{borderTop:'1px solid rgba(255,255,255,.1)',paddingTop:15,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+              <small style={{opacity:.6}}>{lang === 'el' ? 'Οι σημειώσεις αφορούν τις δημοσιευμένες αλλαγές.' : 'Release notes for published changes.'}</small>
+              <button onClick={() => setUpdateLogOpen(false)} style={{border:0,borderRadius:9,padding:'11px 18px',background:'#c9a66f',color:'#17120d',fontWeight:900,cursor:'pointer'}}>{lang === 'el' ? 'ΚΛΕΙΣΙΜΟ' : 'CLOSE'}</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {bugOpen && (
         <div className="bugModalBackdrop" onClick={() => setBugOpen(false)}>
