@@ -653,8 +653,11 @@ export default function PalermoClient() {
   const [adminError, setAdminError] = useState('')
   const [adminSearch, setAdminSearch] = useState('')
   const [adminAction, setAdminAction] = useState('')
+  const [botCount, setBotCount] = useState(5)
 
   const peerRef = useRef(null)
+  const botLobbyRef = useRef(false)
+  const botPhaseScheduledRef = useRef('')
   const hostConnRef = useRef(null)
   const guestConnsRef = useRef(new Map())
   const pendingJoinConnsRef = useRef(new Map())
@@ -1711,6 +1714,67 @@ export default function PalermoClient() {
   }, [screen, phase, phaseEndsAt, round, isHost])
 
   useEffect(() => {
+    if (!isHost || !botLobbyRef.current || screen !== 'game' || !['day','night','vote'].includes(phase)) return
+    const phaseKey = `${phase}:${round}:${phaseEndsAt}`
+    if (botPhaseScheduledRef.current === phaseKey) return
+    botPhaseScheduledRef.current = phaseKey
+
+    const timers = []
+    const schedule = (fn, min = 1800, max = 5200) => {
+      const delay = min + Math.floor(Math.random() * (max - min + 1))
+      timers.push(setTimeout(fn, delay))
+    }
+    const living = gameRosterRef.current.filter(p => p.alive && p.connected !== false)
+    const bots = living.filter(p => p.isBot)
+    if (!bots.length) return
+
+    if (phase === 'night') {
+      const livingKillers = living.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
+      const botKillers = livingKillers.filter(p => p.isBot)
+      if (botKillers.length) schedule(() => {
+        if (phaseRef.current !== 'night' || !isHostRef.current) return
+        const aliveNow = gameRosterRef.current.filter(p => p.alive && p.connected !== false)
+        const killersNow = aliveNow.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
+        const validTargets = aliveNow.filter(p => !killersNow.some(k => k.id === p.id))
+        if (!validTargets.length) return
+        const existing = Object.values(killerVotesRef.current).find(target => validTargets.some(p => p.name === target))
+        const target = existing || validTargets[Math.floor(Math.random() * validTargets.length)].name
+        const next = { ...killerVotesRef.current }
+        botKillers.forEach(bot => { if (aliveNow.some(p => p.id === bot.id)) next[bot.id] = target })
+        killerVotesRef.current = next
+        setKillerVotes(next)
+      })
+      bots.filter(p => p.roleId === 'doctor').forEach(bot => schedule(() => {
+        if (phaseRef.current !== 'night' || !isHostRef.current || !gameRosterRef.current.some(p => p.id === bot.id && p.alive)) return
+        const aliveNow = gameRosterRef.current.filter(p => p.alive && p.connected !== false)
+        if (!aliveNow.length) return
+        const currentTarget = Object.values(killerVotesRef.current).find(Boolean)
+        const target = (currentTarget && aliveNow.find(p => p.name === currentTarget)) || aliveNow[Math.floor(Math.random() * aliveNow.length)]
+        doctorProtectedRef.current = target.name
+        setDoctorProtected(target.name)
+      }, 2200, 6000))
+    }
+
+    if (phase === 'vote') bots.forEach(bot => schedule(() => {
+      if (phaseRef.current !== 'vote' || !isHostRef.current || !gameRosterRef.current.some(p => p.id === bot.id && p.alive)) return
+      if (playerVotesRef.current[bot.id]) return
+      const aliveNow = gameRosterRef.current.filter(p => p.alive && p.connected !== false)
+      const own = aliveNow.find(p => p.id === bot.id)
+      if (!own) return
+      const evil = own.roleId === 'visibleKiller' || own.roleId === 'hiddenKiller'
+      const botKillerIds = new Set(aliveNow.filter(p => p.isBot && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')).map(p => p.id))
+      let targetPool = evil
+        ? aliveNow.filter(p => p.id !== bot.id && !botKillerIds.has(p.id))
+        : aliveNow.filter(p => p.id !== bot.id && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller'))
+      if (!targetPool.length) targetPool = aliveNow.filter(p => p.id !== bot.id)
+      if (!targetPool.length) return
+      const target = targetPool[Math.floor(Math.random() * targetPool.length)]
+      registerDayVote(bot.id, target.name)
+    }, 2600, 7600))
+    return () => timers.forEach(timer => clearTimeout(timer))
+  }, [isHost, screen, phase, round, phaseEndsAt, gameRoster.length])
+
+  useEffect(() => {
     if (isHost && screen === 'game' && gameRoster.length > 0 && !matchFinishedRef.current) {
       checkWin(gameRoster, '', voteScores)
     }
@@ -1873,7 +1937,7 @@ export default function PalermoClient() {
   }, [screen])
 
   useEffect(() => {
-    if (!isHost || !roomCode || !['lobby','role','game'].includes(screen)) return
+    if (!isHost || !roomCode || botLobbyRef.current || !['lobby','role','game'].includes(screen)) return
     const sync = async () => {
       try {
         await writeRoomRegistry({
@@ -2908,7 +2972,18 @@ export default function PalermoClient() {
     })
   }
 
-  function createRoom() {
+  function createRoom(options = {}) {
+    const botLobby = options.botLobby === true && isCreatorProfile(profile) && !!authSessionRef.current?.user?.id
+    const requestedBots = botLobby ? Math.max(1, Math.min(15, Number(options.botCount ?? botCount) || 5)) : 0
+    const roomMaxPlayers = botLobby ? requestedBots + 1 : maxPlayers
+    if (botLobby) {
+      botLobbyRef.current = true
+      setMaxPlayers(roomMaxPlayers)
+      setAccessMode('request')
+      setAccessCode('')
+      setRoomName(lang === 'el' ? 'Ιδιωτικό Bot Lab' : 'Private Bot Lab')
+      botPhaseScheduledRef.current = ''
+    }
     const cleanName = normalizePlayerName(name)
     if (!cleanName) return
     if (cleanName !== name) setName(cleanName)
@@ -2931,21 +3006,24 @@ export default function PalermoClient() {
 
     peer.on('open', id => {
       const hostPlayer = { id, name: cleanName, avatarUrl, clientKey: clientKeyRef.current || id, connected: true, ready: false, isHost: true }
-      writeRoomRegistry({
+      const botNames = ['Nico','Luca','Mila','Enzo','Rosa','Marco','Gia','Dante','Sofia','Rico','Vera','Paolo','Lina','Leo','Ada']
+      const botPlayers = Array.from({ length: requestedBots }, (_, index) => ({
+        id: `bot-${code.toLowerCase()}-${index + 1}`,
+        name: `${botNames[index] || `Bot ${index + 1}`} · BOT`,
+        avatarUrl: '', clientKey: `bot-${code.toLowerCase()}-${index + 1}`,
+        connected: true, ready: true, isBot: true,
+      }))
+      const initialPlayers = [hostPlayer, ...botPlayers]
+      if (!botLobby) writeRoomRegistry({
         room_code: code,
         room_name: (roomName.trim() || `${name.trim()}'s Room`).slice(0,40),
-        host_name: name.trim().slice(0,18),
-        language: lang,
-        access_mode: accessMode,
-        player_count: 1,
-        max_players: maxPlayers,
-        spectator_count: 0,
-        max_spectators: maxSpectators,
-        narrator_enabled: narratorOn,
-        started: false,
+        host_name: name.trim().slice(0,18), language: lang, access_mode: accessMode,
+        player_count: 1, max_players: maxPlayers, spectator_count: 0,
+        max_spectators: maxSpectators, narrator_enabled: narratorOn, started: false,
       }, registryTokenRef.current, false).catch(() => {})
-      setPlayers([hostPlayer])
-      playersRef.current = [hostPlayer]
+      setPlayers(initialPlayers)
+      playersRef.current = initialPlayers
+      if (roleMode === 'auto') setRoles(automaticRolesForPlayers(initialPlayers.length))
       reconnectRoomRef.current = code
       saveReconnectSession(code)
       setSpectators([])
@@ -3432,7 +3510,7 @@ export default function PalermoClient() {
   function resetLobbyReadyForSettings(nextRoles, nextMode = roleMode) {
     setReady(false)
     setPlayers(current => {
-      const nextPlayers = current.map(player => ({ ...player, ready: false }))
+      const nextPlayers = current.map(player => ({ ...player, ready: !!player.isBot }))
       playersRef.current = nextPlayers
       setTimeout(() => broadcast({
         type: 'room-state',
@@ -3503,7 +3581,7 @@ export default function PalermoClient() {
       .reduce((sum, role) => sum + role.count, 0)
     const loverSlots = roles.find(role => role.id === 'lover')?.count || 0
     const setupValid = configuredRoleSlots <= players.length && killerSlots >= 1 && (loverSlots === 0 || loverSlots === 2)
-    if (!isHost || players.length < 2 || !players.every(p => p.connected !== false && p.ready) || !setupValid) return
+    if (!isHost || players.length < 2 || !players.every(p => p.isBot || (p.connected !== false && p.ready)) || !setupValid) return
 
     let pool = roles.flatMap(role => Array(role.count).fill(role))
     while (pool.length < players.length) pool.push(citizen)
@@ -3525,6 +3603,7 @@ export default function PalermoClient() {
       clientKey: player.clientKey || player.id,
       connected: true,
       alive: true,
+      isBot: !!player.isBot,
     }))
 
     const matchId = crypto.randomUUID()
@@ -4068,6 +4147,8 @@ export default function PalermoClient() {
     setConnectionState('idle')
     setConnectionError('')
     setSessionTransitioning(false)
+    botLobbyRef.current = false
+    botPhaseScheduledRef.current = ''
     setScreen('home')
     screenRef.current = 'home'
   }
@@ -4337,8 +4418,17 @@ export default function PalermoClient() {
               <button className={accessMode === 'code' ? 'active' : ''} onClick={() => setAccessMode('code')}>{t('passwordRoom')}</button>
             </div>
             {accessMode === 'code' && <input value={accessCode} onChange={e => setAccessCode(e.target.value)} maxLength={20} placeholder={t('roomPassword')} />}
+            {isCreatorProfile(profile) && authSession?.user?.id && (
+              <div className="botLobbyControl" style={{marginTop:18,padding:'14px 16px',border:'1px solid rgba(220,180,100,.35)',borderRadius:12,background:'rgba(25,18,12,.55)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:8}}><strong>♟ OWNER BOT LOBBY</strong><span style={{fontSize:12,opacity:.8}}>{lang === 'el' ? 'Μόνο για τον δημιουργό' : 'Creator only'}</span></div>
+                <label style={{display:'flex',justifyContent:'space-between',gap:12}}><span>{lang === 'el' ? 'Θέσεις bot' : 'Bot seats'}</span><b>{botCount}</b></label>
+                <input aria-label="Number of bot seats" type="range" min="1" max="15" value={botCount} onChange={e => setBotCount(Number(e.target.value))} style={{width:'100%'}} />
+                <small style={{display:'block',opacity:.78,margin:'4px 0 10px'}}>{lang === 'el' ? 'Δημιουργεί μη δημόσιο lobby δοκιμών με bots έτοιμα να παίξουν.' : 'Creates an unlisted test lobby with bots ready to play.'}</small>
+                <button className="primary wide" onClick={() => createRoom({botLobby:true,botCount})} disabled={!name.trim() || connectionState === 'connecting'}>♟ {lang === 'el' ? 'ΔΗΜΙΟΥΡΓΙΑ BOT LOBBY' : 'CREATE BOT LOBBY'}</button>
+              </div>
+            )}
             <div className="palermoActions">
-              <button className="primary" onClick={createRoom} disabled={!name.trim() || connectionState === 'connecting'}>{t('createRoom')}</button>
+              <button className="primary" onClick={() => createRoom()} disabled={!name.trim() || connectionState === 'connecting'}>{t('createRoom')}</button>
               <button onClick={() => { setScreen('join'); screenRef.current = 'join' }} disabled={!name.trim()}>{t('joinRoom')}</button>
               <button className="browseRoomsButton" onClick={() => { setScreen('browse'); screenRef.current = 'browse' }} disabled={!name.trim()}>◉ {t('browseRooms')}</button>
             </div>
