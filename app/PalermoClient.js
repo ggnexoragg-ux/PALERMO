@@ -3774,7 +3774,7 @@ export default function PalermoClient() {
     }
     // Official Palermo rule: if only one killer remains against the police
     // (represented by Detective here) or Soldier, the good team wins.
-    if (killers.length === 1 && nonKillers.length === 1 &&
+    if (alive.length === 2 && killers.length === 1 && nonKillers.length === 1 &&
         ['detective', 'soldier'].includes(nonKillers[0]?.roleId)) {
       finishMatch('citizens', roster, scores)
       return true
