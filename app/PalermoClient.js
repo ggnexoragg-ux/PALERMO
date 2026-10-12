@@ -4594,7 +4594,7 @@ export default function PalermoClient() {
           </div>
           <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:14}}>
             <button className="menuMusicToggle" onClick={toggleMenuMusic}>♫ {t('music')}: {menuMusicOn ? t('musicOn') : t('musicOff')}</button>
-            <a href="/download" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8,border:'1px solid rgba(210,177,119,.72)',background:'linear-gradient(135deg,rgba(111,72,190,.95),rgba(56,38,89,.95))',color:'#fff',borderRadius:999,padding:'11px 18px',fontWeight:900,letterSpacing:'.06em',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.28)',textDecoration:'none'}}>{lang === 'el' ? '⬇ ΛΗΨΗ ΓΙΑ WINDOWS' : '⬇ DOWNLOAD FOR WINDOWS'}</a>
+
             <button onClick={() => setUpdateLogOpen(true)} style={{border:'1px solid rgba(210,177,119,.55)',background:'rgba(18,16,14,.82)',color:'#e8d4ad',borderRadius:999,padding:'11px 17px',fontWeight:800,letterSpacing:'.08em',cursor:'pointer',boxShadow:'0 8px 24px rgba(0,0,0,.22)'}}>📜 {lang === 'el' ? 'ΤΙ ΝΕΟ ΥΠΑΡΧΕΙ' : "WHAT'S NEW"}</button>
           </div>
         </section>
