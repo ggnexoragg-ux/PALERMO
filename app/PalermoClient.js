@@ -627,6 +627,8 @@ export default function PalermoClient() {
   const [profileNameDraft, setProfileNameDraft] = useState('')
   const [authStatus, setAuthStatus] = useState('idle')
   const [authMessage, setAuthMessage] = useState('')
+  const [passwordResetMode, setPasswordResetMode] = useState('')
+  const [resetPassword, setResetPassword] = useState('')
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [leaderboardOpen, setLeaderboardOpen] = useState(false)
   const [leaderboardRows, setLeaderboardRows] = useState([])
@@ -958,6 +960,67 @@ export default function PalermoClient() {
           ? (lang === 'el' ? 'Βάλε έγκυρο email και password τουλάχιστον 6 χαρακτήρων.' : 'Enter a valid email and a password with at least 6 characters.')
           : (error?.message || (lang === 'el' ? 'Η σύνδεση απέτυχε.' : 'Sign in failed.'))
       )
+    }
+  }
+
+  async function sendPasswordReset() {
+    const email = authEmail.trim()
+    if (!email) {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Βάλε πρώτα το email του λογαριασμού σου.' : 'Enter your account email first.')
+      return
+    }
+    setAuthStatus('loading')
+    setAuthMessage('')
+    try {
+      const redirectTo = typeof window !== 'undefined' ? window.location.origin : ''
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.msg || data?.message || 'recovery_request_failed')
+      setAuthStatus('success')
+      setAuthMessage(lang === 'el'
+        ? 'Αν υπάρχει λογαριασμός με αυτό το email, θα λάβεις σύνδεσμο επαναφοράς. Έλεγξε και τα ανεπιθύμητα.'
+        : 'If an account exists for that email, a password-reset link will arrive shortly. Check your spam folder too.')
+    } catch {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Δεν στάλθηκε το email επαναφοράς. Δοκίμασε ξανά αργότερα.' : 'Could not send the reset email. Please try again later.')
+    }
+  }
+
+  async function updateRecoveredPassword() {
+    if (!authSession?.access_token) {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Ο σύνδεσμος επαναφοράς δεν είναι έγκυρος ή έχει λήξει. Ζήτησε νέο σύνδεσμο.' : 'This reset link is invalid or expired. Request a new one.')
+      return
+    }
+    if (resetPassword.length < 6) {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Ο νέος κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες.' : 'Your new password must be at least 6 characters.')
+      return
+    }
+    setAuthStatus('loading')
+    setAuthMessage('')
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: 'PUT',
+        headers: authHeaders(authSession.access_token),
+        body: JSON.stringify({ password: resetPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.msg || data?.message || 'password_update_failed')
+      saveAuthSession(null)
+      setResetPassword('')
+      setPasswordResetMode('')
+      setAuthPassword('')
+      setAuthStatus('success')
+      setAuthMessage(lang === 'el' ? 'Ο κωδικός άλλαξε. Συνδέσου με τον νέο κωδικό.' : 'Password updated. Sign in with your new password.')
+    } catch {
+      setAuthStatus('error')
+      setAuthMessage(lang === 'el' ? 'Δεν ήταν δυνατή η αλλαγή κωδικού. Ζήτησε νέο σύνδεσμο και δοκίμασε ξανά.' : 'Could not update the password. Request a fresh reset link and try again.')
     }
   }
 
@@ -1669,7 +1732,26 @@ export default function PalermoClient() {
       localStorage.removeItem('palermo-reconnect-v1')
     }
   }, [])
-  useEffect(() => { restoreAuth() }, [])
+  useEffect(() => {
+    // Supabase returns recovery tokens in the URL hash after the user clicks
+    // the password-reset email link. Capture them before showing the new-password form.
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    if (hash.get('type') === 'recovery' && hash.get('access_token')) {
+      const recoverySession = {
+        access_token: hash.get('access_token'),
+        refresh_token: hash.get('refresh_token') || '',
+        token_type: hash.get('token_type') || 'bearer',
+        expires_in: Number(hash.get('expires_in') || 3600),
+      }
+      saveAuthSession(recoverySession)
+      setPasswordResetMode('update')
+      setAuthOpen(true)
+      setAuthMessage(lang === 'el' ? 'Διάλεξε νέο κωδικό πρόσβασης.' : 'Choose a new password for your account.')
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+    } else {
+      restoreAuth()
+    }
+  }, [])
 
   useEffect(() => {
     const existing = document.querySelector('script[data-peerjs]')
@@ -5629,25 +5711,47 @@ export default function PalermoClient() {
               </div>
             ) : (
               <>
-                <div className="modeSwitch">
-                  <button className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthMessage('') }}>{lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN'}</button>
-                  <button className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage('') }}>{lang === 'el' ? 'ΕΓΓΡΑΦΗ' : 'CREATE ACCOUNT'}</button>
-                </div>
-                {authMode === 'signup' && (
+                {passwordResetMode === 'update' ? (
                   <>
-                    <label>USERNAME</label>
-                    <input value={authUsername} onChange={e => setAuthUsername(e.target.value)} maxLength={18} placeholder="Soul" />
+                    <p className="authHint">{lang === 'el' ? 'Δημιούργησε νέο κωδικό πρόσβασης για τον λογαριασμό σου.' : 'Create a new password for your account.'}</p>
+                    <label>{lang === 'el' ? 'ΝΕΟΣ ΚΩΔΙΚΟΣ' : 'NEW PASSWORD'}</label>
+                    <input type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} minLength={6} autoComplete="new-password" placeholder="••••••••" />
+                    {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
+                    <button className="primary wide authSubmit" disabled={authStatus === 'loading'} onClick={updateRecoveredPassword}>{authStatus === 'loading' ? (lang === 'el' ? 'ΠΕΡΙΜΕΝΕ...' : 'PLEASE WAIT...') : (lang === 'el' ? 'ΑΛΛΑΓΗ ΚΩΔΙΚΟΥ' : 'UPDATE PASSWORD')}</button>
+                  </>
+                ) : passwordResetMode === 'request' ? (
+                  <>
+                    <p className="authHint">{lang === 'el' ? 'Θα στείλουμε σύνδεσμο επαναφοράς στο email σου.' : 'We’ll email you a secure password-reset link.'}</p>
+                    <label>EMAIL</label>
+                    <input type="email" value={authEmail} onChange={e => { setAuthEmail(e.target.value); if (authStatus === 'error') setAuthMessage('') }} autoComplete="email" placeholder="you@example.com" />
+                    {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
+                    <button className="primary wide authSubmit" disabled={authStatus === 'loading'} onClick={sendPasswordReset}>{authStatus === 'loading' ? (lang === 'el' ? 'ΠΕΡΙΜΕΝΕ...' : 'PLEASE WAIT...') : (lang === 'el' ? 'ΑΠΟΣΤΟΛΗ ΣΥΝΔΕΣΜΟΥ' : 'SEND RESET LINK')}</button>
+                    <button className="wide" onClick={() => { setPasswordResetMode(''); setAuthMessage(''); setAuthStatus('idle') }}>{lang === 'el' ? 'ΕΠΙΣΤΡΟΦΗ ΣΤΗ ΣΥΝΔΕΣΗ' : 'BACK TO SIGN IN'}</button>
+                  </>
+                ) : (
+                  <>
+                    <div className="modeSwitch">
+                      <button className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthMessage('') }}>{lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN'}</button>
+                      <button className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage('') }}>{lang === 'el' ? 'ΕΓΓΡΑΦΗ' : 'CREATE ACCOUNT'}</button>
+                    </div>
+                    {authMode === 'signup' && (
+                      <>
+                        <label>USERNAME</label>
+                        <input value={authUsername} onChange={e => setAuthUsername(e.target.value)} maxLength={18} placeholder="Soul" />
+                      </>
+                    )}
+                    <label>EMAIL</label>
+                    <input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" />
+                    <label>PASSWORD</label>
+                    <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={6} autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} placeholder="••••••••" />
+                    {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
+                    <button className="primary wide authSubmit" disabled={authStatus === 'loading'} onClick={submitAuth}>
+                      {authStatus === 'loading' ? (lang === 'el' ? 'ΠΕΡΙΜΕΝΕ...' : 'PLEASE WAIT...') : authMode === 'signup' ? (lang === 'el' ? 'ΔΗΜΙΟΥΡΓΙΑ ΛΟΓΑΡΙΑΣΜΟΥ' : 'CREATE ACCOUNT') : (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN')}
+                    </button>
+                    {authMode === 'login' && <button className="authHint" style={{background:'transparent',border:0,cursor:'pointer',textDecoration:'underline',padding:'10px 0'}} onClick={() => { setPasswordResetMode('request'); setAuthMessage(''); setAuthStatus('idle') }}>{lang === 'el' ? 'ΞΕΧΑΣΕΣ ΤΟΝ ΚΩΔΙΚΟ;' : 'FORGOT PASSWORD?'}</button>}
+                    <p className="authHint">{lang === 'el' ? 'Η σύνδεσή σου αποθηκεύεται σε αυτή τη συσκευή ώστε το προφίλ και η μελλοντική πρόοδος να παραμένουν.' : 'Your login stays saved on this device so your profile and future progress remain available.'}</p>
                   </>
                 )}
-                <label>EMAIL</label>
-                <input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="you@example.com" />
-                <label>PASSWORD</label>
-                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={6} placeholder="••••••••" />
-                {authMessage && <div className={authStatus === 'error' ? 'errorText' : 'authSuccess'}>{authMessage}</div>}
-                <button className="primary wide authSubmit" disabled={authStatus === 'loading'} onClick={submitAuth}>
-                  {authStatus === 'loading' ? (lang === 'el' ? 'ΠΕΡΙΜΕΝΕ...' : 'PLEASE WAIT...') : authMode === 'signup' ? (lang === 'el' ? 'ΔΗΜΙΟΥΡΓΙΑ ΛΟΓΑΡΙΑΣΜΟΥ' : 'CREATE ACCOUNT') : (lang === 'el' ? 'ΣΥΝΔΕΣΗ' : 'SIGN IN')}
-                </button>
-                <p className="authHint">{lang === 'el' ? 'Η σύνδεσή σου αποθηκεύεται σε αυτή τη συσκευή ώστε το προφίλ και η μελλοντική πρόοδος να παραμένουν.' : 'Your login stays saved on this device so your profile and future progress remain available.'}</p>
               </>
             )}
           </div>
