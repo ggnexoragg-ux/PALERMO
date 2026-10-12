@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_ROLES = [
   { id: 'visibleKiller', label: 'Revealed Killer', emoji: '🔪', count: 1, min: 1 },
-  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 0, min: 0 },
-  { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
-  { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 1, min: 0 },
+  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
+  { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 1 },
+  { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 0, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
   { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
   { id: 'madness', label: 'Madness', emoji: '🌀', count: 0, min: 0 },
@@ -3771,7 +3771,15 @@ export default function PalermoClient() {
       finishMatch('citizens', roster, scores)
       return true
     }
-    if (killers.length > 0 && nonKillers.length <= 1) {
+    // Official Palermo rule: if only one killer remains against the police
+    // (represented by Detective here) or Soldier, the good team wins.
+    if (killers.length === 1 && nonKillers.length === 1 &&
+        ['detective', 'soldier'].includes(nonKillers[0]?.roleId)) {
+      finishMatch('citizens', roster, scores)
+      return true
+    }
+    // The killers win when they outnumber the remaining good players.
+    if (killers.length > nonKillers.length) {
       finishMatch('killers', roster, scores)
       return true
     }
@@ -3931,23 +3939,24 @@ export default function PalermoClient() {
     }
 
     const nextRound = roundRef.current + 1
+    const isTie = topCount > 0 && tied.length > 1
     setPlayerVotes({})
     playerVotesRef.current = {}
     setVote('')
     setVoteLocked(false)
-    hostSchedulePhase('night', nextRound, 15)
+    // A tied vote must be discussed and retried; it must not silently skip to night.
+    if (isTie) hostSchedulePhase('day', roundRef.current, 120)
+    else hostSchedulePhase('night', nextRound, 15)
   }
 
   function resolveKillerVotes(currentKillerVotes = killerVotesRef.current, currentDoctorProtected = doctorProtectedRef.current) {
     if (!isHostRef.current || phaseRef.current !== 'night') return
     const values = Object.values(currentKillerVotes).filter(Boolean)
-    let target = ''
-    if (values.length === 1) target = values[0]
-    if (values.length >= 2) {
-      target = values.every(v => v === values[0])
-        ? values[0]
-        : values[Math.floor(Math.random() * values.length)]
-    }
+    const livingKillers = aliveRoster(gameRosterRef.current).filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
+    // Both living killers must agree on the same target; never choose randomly between them.
+    const target = livingKillers.length > 0 && values.length === livingKillers.length && values.every(v => v === values[0])
+      ? values[0]
+      : ''
 
     const saved = !!target && !!currentDoctorProtected && target === currentDoctorProtected
     const resolvedTarget = saved ? '' : target
