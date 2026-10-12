@@ -3897,6 +3897,7 @@ export default function PalermoClient() {
     const topCount = ranked[0]?.[1] || 0
     const tied = ranked.filter(([, count]) => count === topCount).map(([target]) => target)
     const eliminatedName = tied.length === 1 ? tied[0] : ''
+    const isTie = topCount > 0 && tied.length > 1
 
     const nextScores = { ...voteScores }
     Object.entries(votesMap).forEach(([voterId, target]) => {
@@ -3939,7 +3940,6 @@ export default function PalermoClient() {
     }
 
     const nextRound = roundRef.current + 1
-    const isTie = topCount > 0 && tied.length > 1
     setPlayerVotes({})
     playerVotesRef.current = {}
     setVote('')
