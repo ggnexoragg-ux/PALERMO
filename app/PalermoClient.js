@@ -1538,7 +1538,7 @@ export default function PalermoClient() {
       if (match) return match
     }
 
-    return candidates.find(v => !/compact|espeak/i.test(v.name || '')) || candidates[0]
+    return candidates.find(v => !/compact|espeak/i.test(v.name || '')) || null
   }
 
   function runNarratorQueue() {
