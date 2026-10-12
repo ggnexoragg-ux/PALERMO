@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_ROLES = [
   { id: 'visibleKiller', label: 'Revealed Killer', emoji: '🔪', count: 1, min: 1 },
-  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 1 },
-  { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 1 },
+  { id: 'hiddenKiller', label: 'Hidden Killer', emoji: '🗡️', count: 1, min: 0 },
+  { id: 'detective', label: 'Detective', emoji: '🕵️', count: 1, min: 0 },
   { id: 'doctor', label: 'Doctor', emoji: '🩺', count: 0, min: 0 },
   { id: 'lover', label: 'Lover', emoji: '❤️', count: 0, min: 0 },
   { id: 'kamikaze', label: 'Kamikaze', emoji: '💣', count: 0, min: 0 },
@@ -3766,7 +3766,8 @@ export default function PalermoClient() {
     }
     const alive = aliveRoster(roster)
     const killers = alive.filter(p => p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')
-    const nonKillers = alive.filter(p => p.roleId !== 'visibleKiller' && p.roleId !== 'hiddenKiller')
+    const nonKillers = alive.filter(p => !['visibleKiller', 'hiddenKiller', 'kamikaze', 'madness'].includes(p.roleId))
+    const evil = alive.filter(p => ['visibleKiller', 'hiddenKiller', 'kamikaze'].includes(p.roleId))
     if (killers.length === 0) {
       finishMatch('citizens', roster, scores)
       return true
@@ -3779,7 +3780,7 @@ export default function PalermoClient() {
       return true
     }
     // The killers win when they outnumber the remaining good players.
-    if (killers.length > nonKillers.length) {
+    if (evil.length > nonKillers.length) {
       finishMatch('killers', roster, scores)
       return true
     }
@@ -3815,7 +3816,7 @@ export default function PalermoClient() {
     if (!actor?.alive || actor.roleId !== 'kamikaze' || !target) return
     if (kamikazeUsedRef.current.has(actorId)) return
     if (target.id === actorId) return
-    if (target.roleId === 'visibleKiller' || target.roleId === 'hiddenKiller') return
+    if (!['citizen', 'detective', 'doctor', 'lover'].includes(target.roleId)) return
 
     kamikazeUsedRef.current.add(actorId)
     if (actorId === peerRef.current?.id) setKamikazeUsed(true)
