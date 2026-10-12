@@ -3925,8 +3925,8 @@ export default function PalermoClient() {
         if (checkWin(nextRoster, victim.roleId, nextScores)) return
       }
     } else {
-      showResultBanner('skip', lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION', lang === 'el' ? 'Η ψηφοφορία δεν έβγαλε νικητή.' : 'The vote ended without a clear target.')
-      speak(lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.', { interrupt: true, rate: 0.88, pitch: 0.92 })
+      showResultBanner('skip', isTie ? (lang === 'el' ? 'ΙΣΟΠΑΛΙΑ' : 'VOTE TIED') : (lang === 'el' ? 'ΚΑΝΕΙΣ ΔΕΝ ΑΠΟΚΛΕΙΣΤΗΚΕ' : 'NO ELIMINATION'), isTie ? (lang === 'el' ? 'Συζητήστε ξανά και ψηφίστε πάλι.' : 'Discuss again, then vote again.') : (lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό.' : 'The vote ended without a clear target.'))
+      speak(isTie ? (lang === 'el' ? 'Υπάρχει ισοπαλία. Συζητήστε ξανά και ακολουθεί νέα ψηφοφορία.' : 'The vote is tied. Discuss again; another vote will follow.') : (lang === 'el' ? 'Η ψηφοφορία έληξε χωρίς αποκλεισμό. Κανείς δεν αποχωρεί.' : 'The vote ends without an elimination. Nobody leaves the game.'), { interrupt: true, rate: 0.88, pitch: 0.92 })
       broadcast({ type: 'vote-result', name: '', roleLabel: '' })
     }
 
