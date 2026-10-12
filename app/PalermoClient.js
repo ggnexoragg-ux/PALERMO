@@ -1773,44 +1773,74 @@ export default function PalermoClient() {
       const own = aliveNow.find(p => p.id === bot.id)
       if (!own) return
       const evil = own.roleId === 'visibleKiller' || own.roleId === 'hiddenKiller'
-      const botKillerIds = new Set(aliveNow.filter(p => p.isBot && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')).map(p => p.id))
-      let targetPool = evil
-        ? aliveNow.filter(p => p.id !== bot.id && p.roleId !== 'visibleKiller' && p.roleId !== 'hiddenKiller')
-        : aliveNow.filter(p => p.id !== bot.id && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller'))
-      if (!targetPool.length) targetPool = aliveNow.filter(p => p.id !== bot.id)
-      if (!targetPool.length) return
+      const otherLiving = aliveNow.filter(p => p.id !== bot.id)
+      if (!otherLiving.length) return
+      // Use the public discussion as the main signal. The bot should not magically
+      // know everyone else's secret role; evil bots simply avoid their fellow killers.
+      const recentMessages = dayMessagesRef.current.slice(-16)
+      const publicText = recentMessages.map(m => `${m.name}: ${m.text}`).join(' ').toLowerCase()
+      const allyIds = new Set(aliveNow.filter(p => p.isBot && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')).map(p => p.id))
+      let targetPool = otherLiving
+      if (evil) {
+        const nonAllies = otherLiving.filter(p => !allyIds.has(p.id))
+        if (nonAllies.length) targetPool = nonAllies
+      }
+      const namedCandidates = targetPool.filter(p => publicText.includes(p.name.toLowerCase()))
+      if (namedCandidates.length) targetPool = namedCandidates
       const target = targetPool[Math.floor(Math.random() * targetPool.length)]
       registerDayVote(bot.id, target.name)
     }, 2600, 7600))
     return () => timers.forEach(timer => clearTimeout(timer))
   }, [isHost, screen, phase, round, phaseEndsAt, gameRoster.length])
 
-  // Give owner-lobby bots simple, delayed discussion replies to real players.
-  // Replies are only triggered by a human message, so bots never create a reply loop.
+  // Bots participate in discussion like players: they initiate statements, react to
+  // human messages, and build suspicions from the public conversation. They never
+  // read other players' hidden roles to decide whom to accuse.
   useEffect(() => {
-    if (!isHost || !botLobbyRef.current || screen !== 'game' || phase !== 'day' || !dayMessages.length) return
-    const latest = dayMessages[dayMessages.length - 1]
-    if (!latest || gameRosterRef.current.some(p => p.name === latest.name && p.isBot)) return
+    if (!isHost || !botLobbyRef.current || screen !== 'game' || phase !== 'day') return
     const livingBots = gameRosterRef.current.filter(p => p.isBot && p.alive && p.connected !== false)
     if (!livingBots.length) return
-    const responseKey = `${round}:${latest.id}`
+    const latest = dayMessages[dayMessages.length - 1]
+    const latestIsHuman = !!latest && !gameRosterRef.current.some(p => p.name === latest.name && p.isBot)
+    const responseKey = latestIsHuman ? `${round}:reply:${latest.id}` : `${round}:opening`
     if (botChatReplyRef.current === responseKey) return
     botChatReplyRef.current = responseKey
-    const replies = [
-      'Something about that story does not add up.',
-      'I want to hear what everyone else thinks first.',
-      'That is interesting, but it is not proof.',
-      'We should keep an eye on who changes their story.',
-      'I am not convinced yet. Let us compare what we know.',
-      'Could be true, could be a distraction. Be careful.',
+
+    const humanNames = gameRosterRef.current
+      .filter(p => p.alive && p.connected !== false && !p.isBot)
+      .map(p => p.name)
+    const allLiving = gameRosterRef.current.filter(p => p.alive && p.connected !== false)
+    const recentText = dayMessages.slice(-12).map(m => `${m.name}: ${m.text}`).join('\n').toLowerCase()
+    const mentioned = humanNames.filter(name => recentText.includes(name.toLowerCase()))
+    const suspect = mentioned.length
+      ? mentioned[Math.floor(Math.random() * mentioned.length)]
+      : humanNames.length ? humanNames[Math.floor(Math.random() * humanNames.length)] : ''
+    const openingLines = [
+      suspect ? `I want to hear more from ${suspect}. Something feels off, but I cannot prove it yet.` : 'We need to compare what we know before voting.',
+      suspect ? `${suspect}, what is your take on everything that happened? I want to hear your explanation.` : 'Everyone should explain their thinking before we decide.',
+      'Let us not rush the vote. Who has actually given us a reason to trust them?',
+      'I am watching for people who change their story. Has anyone noticed anything?',
+      suspect ? `I am keeping ${suspect} in mind for now, but I am open to being convinced.` : 'I would rather hear the arguments before choosing anyone.',
+    ]
+    const reactions = [
+      suspect ? `I hear you, but I am still unsure about ${suspect}. What evidence do we have?` : 'That is a fair point. Does anyone have anything concrete?',
+      'That could be true, but it could also be someone trying to steer the vote.',
+      suspect ? `The way people are talking has me looking at ${suspect}. I want an explanation before I decide.` : 'I do not think we should vote just because someone is loud.',
+      'I am not fully convinced. I want to compare that with what was said earlier.',
+      'We should focus on what people actually said, not just guess.',
+      'I disagree a little. We need a reason, not just a hunch.',
     ]
     const timer = setTimeout(() => {
       if (phaseRef.current !== 'day' || !isHostRef.current) return
       const botsNow = gameRosterRef.current.filter(p => p.isBot && p.alive && p.connected !== false)
       if (!botsNow.length) return
+      // Spread activity over time so the table feels like a conversation, not a chorus.
       const bot = botsNow[Math.floor(Math.random() * botsNow.length)]
-      sendDayMessage(replies[Math.floor(Math.random() * replies.length)], bot.id)
-    }, 1800 + Math.floor(Math.random() * 2600))
+      const line = latestIsHuman
+        ? reactions[Math.floor(Math.random() * reactions.length)]
+        : openingLines[Math.floor(Math.random() * openingLines.length)]
+      sendDayMessage(line, bot.id)
+    }, latestIsHuman ? 1700 + Math.floor(Math.random() * 2800) : 900 + Math.floor(Math.random() * 2200))
     return () => clearTimeout(timer)
   }, [isHost, screen, phase, round, dayMessages])
 
