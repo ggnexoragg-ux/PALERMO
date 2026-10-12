@@ -1764,7 +1764,7 @@ export default function PalermoClient() {
       const evil = own.roleId === 'visibleKiller' || own.roleId === 'hiddenKiller'
       const botKillerIds = new Set(aliveNow.filter(p => p.isBot && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller')).map(p => p.id))
       let targetPool = evil
-        ? aliveNow.filter(p => p.id !== bot.id && !botKillerIds.has(p.id))
+        ? aliveNow.filter(p => p.id !== bot.id && p.roleId !== 'visibleKiller' && p.roleId !== 'hiddenKiller')
         : aliveNow.filter(p => p.id !== bot.id && (p.roleId === 'visibleKiller' || p.roleId === 'hiddenKiller'))
       if (!targetPool.length) targetPool = aliveNow.filter(p => p.id !== bot.id)
       if (!targetPool.length) return
@@ -2989,6 +2989,7 @@ export default function PalermoClient() {
     if (cleanName !== name) setName(cleanName)
     const Peer = getPeer()
     if (!Peer) {
+      if (botLobby) botLobbyRef.current = false
       setConnectionError(t('multiplayerLoading'))
       return
     }
